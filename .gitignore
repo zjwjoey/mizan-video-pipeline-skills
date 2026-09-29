@@ -1,0 +1,12 @@
+.env
+.env.*
+*.mp4
+*.mp3
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.webp
+*task*.json
+__pycache__/
+*.py[cod]

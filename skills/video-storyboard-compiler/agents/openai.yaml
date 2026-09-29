@@ -1,0 +1,3 @@
+interface:
+  display_name: "Video Storyboard Compiler"
+  short_description: "Turn approved scripts into QC-ready shot boards"
