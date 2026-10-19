@@ -3,6 +3,10 @@ name: dreamina-cli
 description: Generate MIZAN storyboard videos through the installed Dreamina Canvas CLI, using the owner's prepared per-shot audio as a video-generation reference. Use after storyboard images and audio are approved and before CapCut Mate assembly.
 ---
 
+# V2 review gate
+
+V2 video plans require `CANVAS_PREVIEW_APPROVED` for the requested shots. Use all ordered `source_image_ids`; never select only the first image of a multi-image shot. For `START_END_FRAME`, bind the two independently approved `frame_refs` in `frame_roles` first/last order and keep `context_refs` outside those two slots. Validate the live model supports this combination with prepared audio before submission. Unsupported combinations block the shot; no silent downgrade, dropped audio/products or fabricated lip-sync success.
+
 # Dreamina Canvas video generation
 
 This MIZAN pipeline stage uses the Dreamina Canvas CLI and its installed `dreamina-canvas-cli` Skill. Do not substitute the separate legacy `dreamina` generator CLI. Read the Canvas Skill before operating, and treat its installed CLI schema, model discovery, authentication instructions, and safety gates as authoritative.

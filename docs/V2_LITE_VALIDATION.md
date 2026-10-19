@@ -4,6 +4,27 @@ Validation date: 2026-10-19, Asia/Shanghai. Baseline main: `2ae7ed3`. Developmen
 
 ## Delivery status: CANVAS_BOOTSTRAP_PARTIAL
 
+### PR review repair round (2026-10-19)
+
+The four P0 contract/gate changes and four P1 state/version changes are implemented on the original V2 branch, without a sixth Skill or main merge. Bootstrap remains **PARTIAL for real production readiness** until the owner approves the real project's preview. **VIDEO_PIPELINE_READY is not established**: paid generation/audio/lip-sync/export and actual Jianying GUI validation remain outstanding. A synthetic gate approval is not real production approval.
+
+| Review item | Repair / observed evidence |
+| --- | --- |
+| P0-1 template contract | Canonical `confirmed_by_owner`, explicit alias conflict rejection, labeled DOCX cards/tables and strict JSON mapping, cell provenance and unresolved/placeholder reports. Complete explicit-table DOCX regression passes; blank source template remains incomplete, not fabricated production. |
+| P0-2 Stage A/B prompts | Explicit stage prompt/negative/refs/locks/additions/output fields; guarded exact-text task plans; approved anchors required before incremental tasks; shared recipes deduplicate or reject conflicts. No claim of a paid batch runner acceptance. |
+| P0-3 frame mapping | Ordered `image_asset_ids`, independent start/end approvals and frame roles; identical deduplicated first/end nodes rejected; multi-image order preserved. Current public CLI only allows two total first/last-frame references: prepared audio with two frames is blocked pending a verified compatible adapter, not silently discarded. |
+| P0-4 whole preview | Explicit reviewer/evidence/owner gate bound to script version, shot order, prompts, selected input hashes/versions and material-manifest SHA256. Critical changes invalidate affected shots. Image/video/CapCut plans and task journaling check the gate. |
+| P1 state | Canvas availability separated from synchronization; reuse preserves `synced`. |
+| P1 drift | Name/version/QC label, position and category placement checked; drift blocks production and nonpaid resume repairs cached placement. |
+| P1 snapshots | Existing inputs now receive immutable byte-verified snapshots, as generated outputs already did; source replacement preserves old approval bytes, missing originals recover from verified copies. Legacy lost bytes cannot be recovered retroactively. |
+| P1 filenames | Truncate descriptions only; full stable ID and trailing version/extension preserved within UTF-16 filename budget. |
+| Offline regression | 62 distinct tests passed locally, five official Skill metadata validations passed, compileall passed. Independent reviewer found shot-order and identical-frame edge cases; fixes and regressions included. |
+| Real nonpaid CLI repeat test | 15:41 +08:00: CLI 1.0.3, existing synthetic Canvas, 21 nodes / 6 media versions, exact script roundtrip, zero repeat mutations, no new upload/version, original bytes unchanged. |
+| Synthetic preview gate on actual synced state | Opt-in `tests/live_preview_smoke.py` verified snapshots and gate acceptance, plus shot-order rejection. Reviewer explicitly labeled AUTOMATED SYNTHETIC FIXTURE TEST; no real owner's creative decision recorded. |
+| CI | Added `.github/workflows/offline-tests.yml`: Windows/Linux, Python 3.11/3.12, unittest, compileall and Linux installer syntax; no account credentials or paid operations. Remote run outcome must be checked separately. |
+
+New local ignored reports: `.local-validation/live_review_cli_report.json` and `.local-validation/live_preview_report.json`. Earlier records below describe the previous 42-test baseline, not this round's new total. Use the [current contract](../skills/dreamina-canvas-bootstrap/references/manifest-contract.md) for changed mapping/preview/snapshot behavior.
+
 The core Bootstrap has passed real nonpaid Canvas tests: Chinese project creation, exact script roundtrip, visible image/audio/video nodes, repeat deduplication, version approval/rollback and reconciliation. The full video-to-Jianying production chain is not claimed fully verified: current CLI video export and actual Jianying GUI opening remain separate limitations. This status is deliberately more conservative than “code complete”.
 
 ## Implemented

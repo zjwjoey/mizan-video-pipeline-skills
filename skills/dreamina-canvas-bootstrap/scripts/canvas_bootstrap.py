@@ -20,6 +20,10 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 
+from production_contract import normalize_production, image_contract_errors
+from template2_manifest import docx_blocks, map_blocks
+from canvas_preview import preview_status, preview_snapshot
+
 GROUPS = ["00｜项目总览与脚本", "01｜人物参考", "02｜门店场景素材", "03｜商品素材",
           "04｜场景锚点", "05｜分镜图片", "06｜西语音频", "07｜视频片段", "08｜历史版本"]
 TYPES = {"character": (1, "人物参考"), "scene": (2, "场景参考"), "product": (3, "商品参考"),
@@ -113,13 +117,13 @@ def project_lock(path):
                 fcntl.flock(stream, fcntl.LOCK_UN)
 
 
-def safe_filename(text):
+def safe_filename(text, max_length=120):
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", text).strip(" .")
     if not text:
         raise ValueError("Empty filename")
     if re.match(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", text, re.I):
         text = "_" + text
-    return text[:120].rstrip(" .")
+    return (text[:max_length] if max_length else text).rstrip(" .")
 
 
 def display_name(asset, version):
@@ -130,11 +134,21 @@ def display_name(asset, version):
 
 
 def generated_filename(asset, version, suffix):
-    return safe_filename("_".join(("MIZAN", asset.get("shot_id") or asset["asset_id"],
-                                   TYPES[asset["asset_type"]][1], asset["description"], version))) + suffix
+    # Allocate the description's budget last; stable identity and trailing version can never be truncated away.
+    identity = safe_filename(asset.get("shot_id") or asset["asset_id"], max_length=None)
+    prefix = "MIZAN_" + identity + "_" + TYPES[asset["asset_type"]][1] + "_"
+    tail = "_" + version + suffix
+    budget = 240 - len(prefix.encode("utf-16-le")) // 2 - len(tail.encode("utf-16-le")) // 2
+    if budget < 1:
+        raise ValueError("Asset identity too long for a safe filename; cannot truncate stable ID/version")
+    description = safe_filename(asset["description"])
+    while len(description.encode("utf-16-le")) // 2 > budget:
+        description = description[:-1]
+    return prefix + description + tail
 
 
 def validate_production(p):
+    p = normalize_production(p)
     errors = []
     for key in ("schema_version", "project_id", "topic", "confirmed_by_owner", "script_version", "full_script", "shots", "assets"):
         if key not in p:
@@ -164,6 +178,7 @@ def validate_production(p):
             errors.append(f"{sid}.audio_role")
         if not isinstance(shot.get("product_refs"), list):
             errors.append(f"{sid}.product_refs must be a list (empty when none)")
+        errors.extend(image_contract_errors(shot))
     ids = set()
     for a in p.get("assets", []):
         for key in ("asset_id", "asset_type", "local_path", "source_type", "description", "qc_status"):
@@ -201,12 +216,22 @@ def extract_docx(path):
                 parts.append("\t")
         paragraphs.append("".join(parts))
     text = "\n".join(paragraphs)
-    # Only an explicitly supplied JSON production block is safe to interpret automatically.
+    blocks = docx_blocks(path)
     match = re.search(r"MIZAN_PRODUCTION_JSON_BEGIN\s*(.*?)\s*MIZAN_PRODUCTION_JSON_END", text, re.S)
+    candidate, unresolved, conflicts = (json.loads(match.group(1)), [], []) if match else map_blocks(blocks)
+    errors, production = [], None
+    try:
+        production = validate_production(candidate)
+    except ValueError as error:
+        errors.append(str(error))
+    if unresolved or conflicts:
+        production = None
     return {"source_file": str(Path(path).resolve()), "source_hash": file_hash(path), "full_text": text,
-            "production": validate_production(json.loads(match.group(1))) if match else None,
-            "requires_structured_mapping": not bool(match),
-            "required_shot_fields": list(SHOT_FIELDS) if not match else []}
+            "source_blocks": blocks, "production": production, "candidate": normalize_production(candidate),
+            "requires_structured_mapping": production is None, "unresolved_fields": unresolved,
+            "conflicts": conflicts, "validation_errors": errors,
+            "mapping_mode": "explicit_json" if match else "explicit_tables",
+            "required_shot_fields": list(SHOT_FIELDS) if production is None else []}
 
 
 class CLIError(RuntimeError):
@@ -305,6 +330,7 @@ class Bootstrap:
             "sync_status": "planned", "nodes": {}, "assets": {}, "approved_versions": {}, "tasks": {}, "history": []}
         if self.state["project_id"] != self.production["project_id"]:
             raise ValueError("Production and Canvas project_id do not match")
+        self.state["production_root"] = str(self.path.parent)
         self.state.setdefault("node_owners", {})
         # Migrate earlier journals once, retaining earliest known content ownership.
         existing = [v for vs in self.state["assets"].values() for v in vs]
@@ -329,7 +355,17 @@ class Bootstrap:
             if asset.get("shot_id") and asset["shot_id"] not in shots:
                 continue
             path = (self.path.parent / asset["local_path"]).resolve()
+            source_path = path
+            recovered = False
+            if not path.is_file():
+                versions = self.state["assets"].get(asset["asset_id"], [])
+                chosen = next((v for v in versions if v["version"] == self.state["approved_versions"].get(asset["asset_id"])), None)
+                chosen = chosen or (versions[-1] if versions else None)
+                if chosen and Path(chosen["local_path"]).is_file() and file_hash(chosen["local_path"]) == chosen["file_hash"]:
+                    path, recovered = Path(chosen["local_path"]), True
             entry = dict(asset, local_path=str(path), media_type=MEDIA.get(path.suffix.lower()))
+            if recovered:
+                entry.update(source_missing_using_snapshot=True, source_local_path=str(source_path))
             expected_media = asset["asset_type"] if asset["asset_type"] in ("audio", "video") else "image"
             if not path.is_file():
                 missing.append({"asset_id": asset["asset_id"], "reason": "missing_file", "local_path": str(path)})
@@ -398,7 +434,9 @@ class Bootstrap:
             self.state.update(canvas_project_name=name, sync_status="creating")
             self.save()  # target UUID is durable before create
             found = self.client.call(("canvas", "create"), (name,), **{"project-id": target})["project"]
-        self.state.update(canvas_project_name=found["name"], canvas_url=found.get("webUrl"), sync_status="bootstrapped")
+        self.state.update(canvas_project_name=found["name"], canvas_url=found.get("webUrl"), canvas_status="available")
+        if self.state["sync_status"] in ("planned", "creating"):
+            self.state["sync_status"] = "bootstrapped"
         self.state["capabilities"]["canvas_creation_access"] = "reused" if self.production.get("canvas_project_id") else "verified"
         self.save()
         self.remote_nodes()
@@ -490,21 +528,65 @@ class Bootstrap:
                        submit_id=stable(self.state["canvas_project_id"], asset["file_hash"], "import"), sync_status="pending",
                        group_name=GROUPS[TYPES[asset["asset_type"]][0]], created_at=now())
         version["update_id"] = stable(version["canvas_node_id"], "create")
-        if asset["source_type"] == "generated":
-            original = Path(asset["local_path"])
-            destination = self.state_path.parent / "generated" / safe_filename(aid) / generated_filename(asset, version["version"], original.suffix.lower())
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if destination.exists() and file_hash(destination) != asset["file_hash"]:
-                raise ValueError("Refuse to overwrite existing generated version: " + str(destination))
-            if not destination.exists():
-                shutil.copy2(original, destination)
-            version.update(source_local_path=str(original), local_path=str(destination))
+        self.ensure_snapshot(version)
         versions.append(version)
         self.state["node_owners"].setdefault(version["canvas_node_id"], {"asset_id": aid, "version": version["version"]})
         if asset["qc_status"] == "approved":
             version["approval_pending_selection"] = True
         self.save()
         return version
+
+    def ensure_snapshot(self, version):
+        original = Path(version["local_path"])
+        root = "generated" if version["source_type"] == "generated" else "snapshots"
+        destination = self.state_path.parent / root / safe_filename(version["asset_id"]) / generated_filename(version, version["version"], original.suffix.lower())
+        if destination.exists() and file_hash(destination) != version["file_hash"]:
+            raise ValueError("Immutable snapshot content mismatch: " + str(destination))
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp = tempfile.mkstemp(prefix=".snapshot-", dir=destination.parent)
+            os.close(fd)
+            try:
+                shutil.copy2(original, temp)
+                if file_hash(temp) != version["file_hash"]:
+                    raise ValueError("Source changed while creating immutable snapshot")
+                os.replace(temp, destination)
+            finally:
+                if os.path.exists(temp): os.unlink(temp)
+        if original.resolve() != destination.resolve():
+            version.setdefault("source_local_path", str(original))
+        version["local_path"] = str(destination)
+
+    def refresh_preview(self):
+        status = preview_status(self.production, self.state)
+        self.state.setdefault("canvas_preview", {}).update({k: v for k, v in status.items() if k != "current_snapshot"})
+        return status
+
+    def approve_preview(self, reviewer, evidence, owner_confirmed=False):
+        if not owner_confirmed or not reviewer or not evidence:
+            raise ValueError("Explicit owner confirmation, reviewer and evidence are required")
+        if self.state["sync_status"] != "synced":
+            raise ValueError("Canvas must reconcile successfully before owner preview approval")
+        full = self.state["nodes"].get("full_script", {})
+        if full.get("text") != self.production["full_script"] or full.get("script_version") != self.production["script_version"]:
+            raise ValueError("Current locked script version has not been synchronized")
+        for shot in self.production["shots"]:
+            record = self.state["nodes"].get("shot:" + shot["shot_id"], {})
+            if record.get("text") != json.dumps(shot, ensure_ascii=False, indent=2):
+                raise ValueError("Current shot contract has not been synchronized: " + shot["shot_id"])
+        plan = self.plan()
+        if plan["missing"]:
+            raise ValueError("Cannot approve a preview with missing selected inputs")
+        for asset in plan["assets"]:
+            if not any(v["file_hash"] == asset["file_hash"] and v["sync_status"] == "synced" for v in self.state["assets"].get(asset["asset_id"], [])):
+                raise ValueError("Selected source changed or has not synchronized: " + asset["asset_id"])
+        snapshot = preview_snapshot(self.production, self.state)
+        record = {"status": "CANVAS_PREVIEW_APPROVED", "reviewer": reviewer, "evidence": evidence, "approved_at": now(),
+                  "script_version": self.production["script_version"], "material_manifest_version": snapshot["material_manifest_version"],
+                  "approved_snapshot": snapshot, "affected_shot_ids": [], "changed_components": []}
+        self.state.setdefault("preview_history", []).append(record.copy())
+        self.state["canvas_preview"] = record
+        self.save()
 
     def sync_asset(self, version, index):
         kind, nid, rid = version["media_type"], version["canvas_node_id"], version["canvas_resource_id"]
@@ -544,15 +626,20 @@ class Bootstrap:
             actual = self.show(nid)
         if not actual or not any(r.get("resourceId") == rid and r.get("status") == "success" for r in actual.get("resources", [])):
             raise ValueError("Resource exists but is not visible through the expected Canvas node")
+        owner = self.node_owner(nid)
+        expected = owner.get("layout")
+        misplaced = expected and any(abs(actual.get("layout", {}).get(k, float("inf")) - expected[k]) > 1 for k in ("x", "y"))
+        if owner is version and misplaced:
+            version.update(metadata_position={k: expected[k] for k in ("x", "y")}, metadata_sync_status="pending")
         version.update(sync_status="synced", verified_at=now())
-        version["layout"] = actual.get("layout")
         version.setdefault("layout_group", version["group_name"])
         if version.pop("approval_pending_selection", False):
             self.state["approved_versions"][version["asset_id"]] = version["version"]
         # Repair a review/name edit lost after the local manifest was durably saved.
-        owner = self.node_owner(nid)
         if owner is version and (actual.get("title") != title or version.get("metadata_sync_status") == "pending"):
             self.update_title(version, history=version["group_name"] == GROUPS[8])
+        else:
+            version["layout"] = actual.get("layout")
         self.save()
 
     def sync(self):
@@ -573,6 +660,7 @@ class Bootstrap:
                     version["sync_status"] = "local_content_changed"
                     self.save()
                     continue
+                self.ensure_snapshot(version)  # migrate still-valid legacy original-path records
                 try:
                     self.sync_asset(version, 0)
                 except CLIError as error:
@@ -580,6 +668,7 @@ class Bootstrap:
                     self.save()
                     raise
         self.state["sync_status"] = "synced" if not plan["missing"] and all(v["sync_status"] == "synced" for vs in self.state["assets"].values() for v in vs) else "partial"
+        self.refresh_preview()
         self.save()
 
     def reconcile(self):
@@ -591,6 +680,14 @@ class Bootstrap:
             for v in versions:
                 actual = self.show(v["canvas_node_id"]) if v["canvas_node_id"] in self.remote else None
                 v["sync_status"] = "synced" if actual and any(r.get("resourceId") == v["canvas_resource_id"] and r.get("status") == "success" for r in actual.get("resources", [])) else "drifted"
+                owner = self.node_owner(v["canvas_node_id"])
+                issues = []
+                if actual and actual.get("title") != display_name(owner, owner): issues.append("display_name_or_version_status")
+                if actual and owner.get("layout") and any(abs(actual.get("layout", {}).get(k, float("inf")) - owner["layout"][k]) > 1 for k in ("x", "y")):
+                    issues.append("position")
+                if owner.get("layout_group") != owner["group_name"]: issues.append("category_placement")
+                v["drift_issues"] = issues
+                if issues: v["sync_status"] = "drifted"
                 if v["sync_status"] == "synced":
                     resource = self.client.call(("resource", "get"), (v["canvas_resource_id"],), **{"project-id": self.state["canvas_project_id"]})
                     if resource.get("status") != "success":
@@ -604,6 +701,7 @@ class Bootstrap:
                 task["recovery_action"] = "inspect_same_submission_no_resubmit"
         records = list(self.state["nodes"].values()) + [v for vs in self.state["assets"].values() for v in vs]
         self.state["sync_status"] = "synced" if records and all(r["sync_status"] == "synced" for r in records) else "partial"
+        self.refresh_preview()
         self.save()
 
     def review(self, asset_id, version, status, evidence):
@@ -637,6 +735,7 @@ class Bootstrap:
         self.update_title(v)
         if previous:
             self.update_title(previous, history=True)
+        self.refresh_preview()
         self.save()
 
     def node_owner(self, nid):
@@ -654,6 +753,9 @@ class Bootstrap:
                  "update-id": stable(v["canvas_node_id"], title, v["group_name"]), "title": title}
         if self.state["organization_mode"] == "spatial_sections" and v.get("layout_group") != v["group_name"]:
             v.setdefault("metadata_position", self.position(GROUPS.index(v["group_name"]), len(self.state["history"])))
+            flags.update(v["metadata_position"])
+            flags["update-id"] = stable(v["canvas_node_id"], title, v["group_name"], digest(v["metadata_position"]))
+        elif v.get("metadata_position") and v.get("metadata_sync_status") == "pending":
             flags.update(v["metadata_position"])
             flags["update-id"] = stable(v["canvas_node_id"], title, v["group_name"], digest(v["metadata_position"]))
         v.update(title_update_id=flags["update-id"], metadata_sync_status="pending")
@@ -679,12 +781,13 @@ class Bootstrap:
                 "organization_mode": self.state.get("organization_mode", "not_discovered"),
                 "asset_versions": len(versions), "synced_asset_versions": sum(v["sync_status"] == "synced" for v in versions),
                 "script_nodes": len(self.state["nodes"]), "missing": self.plan()["missing"], "video_blockers": blockers,
+                "canvas_preview": {k: v for k, v in preview_status(self.production, self.state).items() if k != "current_snapshot"},
                 "next_action": "review_materials_then_generate_approved_shots", "paid_operations": 0}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["dry-run", "bootstrap", "sync", "reconcile", "resume", "status", "register", "review", "extract-docx"])
+    parser.add_argument("mode", choices=["dry-run", "bootstrap", "sync", "reconcile", "resume", "status", "register", "review", "approve-preview", "extract-docx"])
     parser.add_argument("--production", type=Path)
     parser.add_argument("--state", type=Path)
     parser.add_argument("--cli")
@@ -696,6 +799,8 @@ def main(argv=None):
     parser.add_argument("--version")
     parser.add_argument("--qc-status", choices=list(QC), default="pending_review")
     parser.add_argument("--evidence")
+    parser.add_argument("--reviewer")
+    parser.add_argument("--owner-confirmed", action="store_true")
     args = parser.parse_args(argv)
     if args.mode == "extract-docx":
         if not args.file or not args.output:
@@ -719,9 +824,12 @@ def main(argv=None):
         job.client = CanvasCLI(args.cli, args.canvas_skill)
         try:
             job.discover()
-            job.ensure_canvas(create=args.mode != "reconcile")
+            job.ensure_canvas(create=args.mode not in ("reconcile", "approve-preview"))
             if args.mode == "reconcile":
                 job.reconcile()
+            elif args.mode == "approve-preview":
+                job.reconcile()
+                job.approve_preview(args.reviewer, args.evidence, args.owner_confirmed)
             elif args.mode == "review":
                 job.review(args.asset_id, args.version, args.qc_status, args.evidence)
             else:

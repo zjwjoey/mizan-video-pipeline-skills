@@ -31,7 +31,7 @@ The installer copies all five folders under `<skill-root>`; the original four st
 
 ## V2 Lite workflow
 
-Template 1 topic → template 2 confirmed script → **Stage 02.5 Canvas Bootstrap** → scene anchors / execution images + QC → Dreamina videos + QC → editable Jianying draft.
+Template 1 topic → template 2 confirmed script → **Stage 02.5 Canvas Bootstrap** → **owner whole-Canvas preview approval** → scene anchors / execution images + QC → Dreamina videos + QC → editable Jianying draft.
 
 The two [manifest files](skills/dreamina-canvas-bootstrap/references/manifest-contract.md) share a stable project ID. Production owns locked creative choices; Canvas owns nodes, resource mappings, sync state, approved-version pointers and recovery records. The source script and original media remain unchanged. Prepared audio is required at the relevant video gate, not for syncing the script/images. Chinese translations are internal review text, not automatic subtitles.
 
@@ -41,6 +41,8 @@ python $bootstrap dry-run --production 'D:\视频项目\production_manifest.json
 python $bootstrap bootstrap --production 'D:\视频项目\production_manifest.json'
 python $bootstrap sync --production 'D:\视频项目\production_manifest.json'
 python $bootstrap reconcile --production 'D:\视频项目\production_manifest.json'
+# Only after the owner actually previews this Canvas; never auto-confirm production.
+python $bootstrap approve-preview --production 'D:\视频项目\production_manifest.json' --owner-confirmed --reviewer '负责人' --evidence '本轮脚本与素材全集已确认'
 python $bootstrap resume --production 'D:\视频项目\production_manifest.json'
 python $bootstrap status --production 'D:\视频项目\production_manifest.json'
 ```
@@ -59,3 +61,5 @@ python -m unittest discover -s tests -v
 ```
 
 The three-shot [example](examples/mizan-family-party/production_manifest.json) is explicitly synthetic; its null audio mappings and pending QC must be completed before real video generation. [Validation evidence and limitations](docs/V2_LITE_VALIDATION.md) distinguish real CLI passes from mocks and manual steps. [Baseline audit](docs/V2_LITE_AUDIT.md) lists the narrowly scoped changes.
+
+Review fixes add lossless template-2 aliases/tables with provenance, explicit Stage A/B prompt recipes, ordered multi-image/start-end mappings, whole-Canvas preview invalidation, immutable original-input snapshots and drift checks. `pipeline_handoff.py image-anchor|image-incremental|video|capcut` produces guarded plans; it does not automatically execute paid generation. Current CLI first/last-frame mode cannot carry two frame references plus prepared audio, so that combination is explicitly blocked rather than silently dropping sound. GitHub Actions runs offline regressions only, without production credentials or generation calls.

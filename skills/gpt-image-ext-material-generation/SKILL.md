@@ -3,6 +3,10 @@ name: gpt-image-ext-material-generation
 description: Generate storyboard stills with GPT-Image-2.5-Ext when reference-led image generation and strict prompt preservation are needed before video assembly.
 ---
 
+# V2 review gate
+
+Before any V2 project generation, obtain `pipeline_handoff.py image-anchor` or `image-incremental` from the sibling Bootstrap. This enforces whole-Canvas owner preview and source approvals. Use the selected task's exact prompt, separate negative/locks/additions, ordered reference IDs and snapshot files, and stable output ID. Do not flatten Stage A and Stage B into one prompt. If this provider cannot represent a constraint without changing approved text, stop for an explicit adaptation decision. Register/review each anchor before requesting incremental/start/end tasks. This is a gated plan handoff, not a certified autonomous batch runner.
+
 # GPT-Image-2.5-Ext material generation
 
 Use this skill after a shot has an approved image prompt and before its video task is submitted.

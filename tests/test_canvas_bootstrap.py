@@ -215,6 +215,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_paid_task_record_and_recovery_only_queries(self):
         job = self.sync()
+        job.approve_preview("offline test owner", "synthetic fixture only", owner_confirmed=True)
         task = record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4})
         self.assertEqual(task, record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4}))
         self.cli.calls.clear()
@@ -243,8 +244,7 @@ class BootstrapTests(unittest.TestCase):
         job = self.sync()
         job.review("CHAR01", "v01", "approved", "fixture")
         (self.root / self.p["assets"][0]["local_path"]).write_bytes(b"changed")
-        with self.assertRaisesRegex(ValueError, "changed"):
-            approved(job.state, "CHAR01")
+        self.assertEqual(Path(approved(job.state, "CHAR01")["local_path"]).read_bytes(), b"fixture-0")
 
     def test_windows_naming(self):
         self.assertEqual(safe_filename('门店:灯/串?<>"|*'), "门店_灯_串______")
@@ -341,6 +341,9 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(job.node_owner(v2["canvas_node_id"])["asset_id"], "SCENE_STORE")
 
     def test_positive_downstream_approved_refs_and_no_subtitles(self):
+        for shot in self.p["shots"]:
+            shot.update(audio_role="none", audio_ref=None, lip_sync_required=False)
+        write_json(self.path, self.p)
         job = self.sync()
         # Isolated fixture approval, never a real user's creative QC.
         for aid in list(job.state["assets"]):
@@ -354,6 +357,7 @@ class BootstrapTests(unittest.TestCase):
             job.review(asset["asset_id"], "v01", "approved", "offline fixture approval")
         for shot in self.p["shots"]:
             shot.update(audio_role="none", audio_ref=None, lip_sync_required=False)
+        job.approve_preview("offline test owner", "synthetic fixture only", owner_confirmed=True)
         video_plan = build_plan(self.p, job.state, "video")
         self.assertEqual(video_plan["canvas_project_id"], job.state["canvas_project_id"])
         self.assertTrue(all(r.startswith("node:") for s in video_plan["shots"] for r in s["refs"]))

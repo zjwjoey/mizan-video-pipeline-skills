@@ -3,6 +3,10 @@ name: video-storyboard-compiler
 description: "Compile an approved video script into shot-level production boards, generation prompts, asset manifests, and QC-ready handoffs. Use after scripting and before footage or AI asset generation."
 ---
 
+# V2 review gate
+
+Preserve `image_generation` Stage A/B/start/end/direct records separately, including exact prompt, negative prompt, ordered reference IDs, locks, additions and output IDs. Use ordered `image_asset_ids`, not one `approved_asset_id`; first/last-frame shots require two distinct explicit IDs. Follow the Canvas contract's alias mapping and missing-field report. Canvas upload is followed by whole-Canvas owner preview approval before image production.
+
 # Video Storyboard Compiler
 
 Turn a locked narration script into an executable visual plan. The deliverable must let a separate asset-generation, QC, editing, or CapCut-draft step continue without reinterpreting the creative brief.

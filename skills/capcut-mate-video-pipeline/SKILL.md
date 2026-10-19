@@ -3,6 +3,10 @@ name: capcut-mate-video-pipeline
 description: Assemble approved shot videos into an editable Jianying/CapCut Mate draft on Windows, validate media and timeline integrity, and render when requested. Subtitles are optional and require explicit configuration.
 ---
 
+# V2 review gate
+
+The V2 capcut plan also enforces the project-level Canvas preview gate, distinct from individual approved-video QC. Keep `CANVAS_BOOTSTRAP_READY` separate from `VIDEO_PIPELINE_READY`; only real production generation/audio/export and actual Jianying GUI checks can establish the latter. Neither successful synchronization nor a structural draft test authorizes that readiness claim.
+
 # CapCut Mate 视频流水线
 
 Use this skill when the user wants a repeatable pipeline from a shot script and local/AI-generated materials to a CapCut/Jianying draft, especially when captions, shot timing, bilingual subtitles, or automatic rendering are part of the request. Do not render, upload, or call cloud services unless the user asks for that stage.

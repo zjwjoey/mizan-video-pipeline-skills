@@ -18,7 +18,7 @@ Each shot requires these keys, even when an explicit null/empty list is appropri
 | `image_count` | Number of execution images; reused scene anchor is not a new execution image. |
 | `audio_ref` | Stable audio asset ID, or null while missing/explicitly silent. Legacy local-path audio maps must be deliberately converted with provenance. |
 | `audio_role`, `lip_sync_required` | `dialogue/true`, `narration/false`, or explicit `none/false`. Null decisions can synchronize scripts but cannot pass the video gate. Silent mode requires live model validation. |
-| `approved_asset_id`, `video_asset_id` | Optional stable logical image/video ID for downstream selection; version resolves through Canvas's `approved_versions`. |
+| `image_asset_ids`, `video_asset_id` | Ordered execution-image IDs (exactly `image_count` unique IDs) and downstream video ID. `approved_asset_id` is legacy metadata, not an execution-image selector. Versions resolve through Canvas's `approved_versions`. |
 
 Each selected input asset requires `asset_id`, `asset_type`, `local_path`, `description`, `source_type: existing|generated`, `qc_status`. Types: `character`, `scene`, `product`, `scene_anchor`, `storyboard_image`, `first_frame`, `last_frame`, `audio`, `video`. Add `shot_id` or reusable `shot_ids`, `sku_id`, `character_id`, and provenance as appropriate. Product assets not referenced by any shot are filtered out. No recursive library upload is performed. Output declarations use the same identity/type/description fields but do not assert a file exists.
 
@@ -38,7 +38,7 @@ The nine sections are: `00｜项目总览与脚本`, `01｜人物参考`, `02｜
 
 ## Versions and recovery
 
-Display names use `镜头/角色/SKU编号｜素材类型｜内容描述｜原有/新生成｜v01｜审核状态`. IDs are independent of these editable names. New generated files are copied to an immutable project-local `generated/<asset_id>/MIZAN_P03_分镜图片_描述_v02.png`; statuses are not in filenames. Original files are never renamed, moved, overwritten or deleted.
+Display names use `镜头/角色/SKU编号｜素材类型｜内容描述｜原有/新生成｜v01｜审核状态`. IDs are independent of these editable names. New generated files are copied to project-local `generated/<asset_id>/`; existing inputs also receive immutable byte-verified copies under `snapshots/<asset_id>/`. Version records use those copies and retain `source_local_path`. If a source is overwritten, the old approved version remains recoverable but project preview is invalidated. A missing original may use its verified snapshot. Still-valid legacy records are migrated on sync; already-lost legacy bytes cannot be reconstructed. Filenames preserve the complete asset ID and trailing version/extension, truncating only descriptions within a Windows-safe UTF-16 budget. Original files are never renamed, moved, overwritten or deleted.
 
 ```powershell
 python canvas_bootstrap.py register --production production_manifest.json --asset-id P03_IMAGE --file "D:\新图.png"
@@ -53,7 +53,38 @@ Run `reconcile` to see remote drift and `resume` to repair nonpaid operations. R
 
 ## DOCX and template 2
 
-Template 1 stays unchanged. Add a short Canvas block to template 2: stable project ID, topic, script version, selected local asset paths and the confirmed shot IDs. Put the structured manifest beside Word. An optional `MIZAN_PRODUCTION_JSON_BEGIN` / `MIZAN_PRODUCTION_JSON_END` block allows strict automatic extraction. Ordinary prose/tables are extracted verbatim with paragraph/cell order retained; extraction deliberately does not guess shot semantics. Map all required fields with source paragraph/table coordinates and preserve the original text before saving a confirmed production manifest.
+Template 1 stays unchanged. Template 2 maps canonical project/shot fields from labeled two-column cards or a wide shot table with a `shot_id` header. Stage headings `Stage A`, `Stage B`, `START FRAME`, `END FRAME` select stage records; `ANCHOR PROMPT`, `FINAL PROMPT`, `NEGATIVE / 禁止项` map verbatim. Lists/objects must be explicit JSON, not guessed filenames or free-form separators. `owner_confirmed` is accepted as an alias of `confirmed_by_owner`; contradictory values stop validation. `duration_target`, `host_anchor_id`, `scene_group` map with provenance. An optional `MIZAN_PRODUCTION_JSON_BEGIN` / `MIZAN_PRODUCTION_JSON_END` block remains supported.
+
+`extract-docx` returns exact `full_text`, `source_blocks`, `candidate`, `unresolved_fields`, `conflicts`, `validation_errors` and source coordinates. It sets `production` only after full validation with no unresolved/conflicting cells. Blank templates and ordinary prose are not auto-approved production. A person must resolve missing asset IDs, image mapping, exact staged prompts, audio roles and owner confirmation before production; do not fill them creatively.
+
+## Lossless image-stage handoff
+
+Each shot has `image_generation` with separate stage objects. Every executed stage requires exact `prompt`, explicit `negative_prompt` (empty only if intentionally none), ordered `reference_asset_ids`, `keep_fixed`, `add_elements` and `output_asset_ids`. Strings are not rewritten or merged. Optional `output_prompts` maps output IDs to distinct exact prompts for multi-image recipes. `incremental`, `start` and `end` require `base_asset_id` equal to the shot's `scene_anchor_id`.
+
+- `ANCHOR_ONLY`: `anchor`, producing the ordered execution image(s); an explicit `reuse_asset_id` may reuse the approved scene anchor.
+- `ANCHOR_CHARACTER`, `ANCHOR_PRODUCT`, `ANCHOR_CHARACTER_PRODUCT`: `anchor` then `incremental`. Shared scene anchors use identical recipes or explicit `anchor: {"reuse_asset_id": "ANCHOR_STORE"}`. Conflicting recipes for one output ID stop.
+- `START_END_FRAME`: `anchor`, `start`, `end`; distinct `start_frame_asset_id` and `end_frame_asset_id`; `image_asset_ids` must be exactly `[start_frame_asset_id, end_frame_asset_id]`. Both need independent approval. Both frame stages inherit the same anchor, locks and explicit references.
+- `DIRECT_PRODUCT`, `MULTI_REFERENCE`: `direct`; all outputs are explicitly ordered, no single-image fallback.
+
+Run `pipeline_handoff.py image-anchor --production ... --output stage_a.json`, register/review anchors, then `image-incremental` for Stage B/start/end/direct tasks. Plans retain prompt/negative/locks/additions/reference IDs, node references and immutable local reference paths. Required real SKU references cannot be omitted. These are executable task inputs, not an automatic paid batch runner. The chosen generator must support every constraint; do not discard negatives/locks or alter the approved prompt to fit an unsupported API.
+
+Video plans use every approved execution image. First/last-frame plans expose `frame_refs`, ordered `frame_roles`, `context_refs` and a separate audio association; never put scene/product context into the two frame slots. Verify current model/mode support for the combination of two frames, context and prepared audio. If unsupported, block the shot: do not silently drop audio, frames or products or substitute another strategy.
+
+## Whole-Canvas preview approval
+
+Synchronization alone leaves `CANVAS_PREVIEW_PENDING`. After the owner actually previews the current Canvas, run:
+
+```powershell
+python canvas_bootstrap.py approve-preview --production production_manifest.json --owner-confirmed --reviewer "负责人" --evidence "本轮画布链接、脚本版本和素材全集已人工确认"
+```
+
+Approval requires synchronized script/shot text and selected media. `canvas_preview` records owner evidence/time, exact script version, SHA256 material-manifest version and an immutable approved snapshot. `preview_history` preserves approvals. `pipeline_handoff` and paid-task journaling require this project gate in addition to individual asset QC. There is no auto-approval switch in `sync`/`resume`.
+
+Script/rules/shot-prompt/input bytes or selected input versions change the status to `CANVAS_PREVIEW_REVIEW_REQUIRED`, with changed components and affected shot IDs. Generated outputs not declared as initial inputs do not by themselves invalidate the initial preview. A selected unaffected shot can proceed with `--shot-id`; global changes block all shots. Reconcile drift also blocks production until repaired, including visible names, version/QC labels, spatial location and category intent. Canvas availability and synchronization status are separate; reusing a Canvas does not reset `synced` to `bootstrapped`.
+
+## Readiness evidence
+
+`CANVAS_BOOTSTRAP_READY` requires verified real nonpaid Canvas import/readback/recovery and actual owner preview for the production project. Offline synthetic approvals test the gate but never approve a real creative project. `VIDEO_PIPELINE_READY` additionally requires real Stage A/B generation/QC, prepared-audio video generation and sound/lip-sync checks, actual export, editable draft and Jianying GUI verification. Report the two outcomes separately; a task plan, mock test or valid draft JSON cannot certify a finished video pipeline.
 
 ## Capability boundaries
 

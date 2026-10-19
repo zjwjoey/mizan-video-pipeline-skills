@@ -6,28 +6,285 @@
   "simulation_only": true,
   "script_version": "v01",
   "full_script": "离线示例，非正式创意。\nP01 门店开场：Hoy preparo una fiesta de Halloween.\nP02 选购商品：Busco luces para decorar mi casa.\nP03 家庭布置：Todo listo para recibir a mis amigos.",
-  "format": {"width": 1080, "height": 1920, "fps": 30},
-  "subtitles": {"enabled": false, "languages": []},
-  "production_rules": ["模拟素材只用于离线测试和无付费画布导入验收", "正式生产必须提供真实SKU和已确认西语音频", "不额外生成可见字幕"],
+  "format": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "subtitles": {
+    "enabled": false,
+    "languages": []
+  },
+  "production_rules": [
+    "模拟素材只用于离线测试和无付费画布导入验收",
+    "正式生产必须提供真实SKU和已确认西语音频",
+    "不额外生成可见字幕"
+  ],
   "shots": [
-    {"shot_id": "P01", "title": "门店开场", "duration": 4, "scene_id": "SCENE_STORE", "scene_anchor_id": "ANCHOR_STORE", "character_id": "CHAR01", "product_refs": [], "voiceover_es": "Hoy preparo una fiesta de Halloween.", "translation_zh": "今天我要准备一场万圣节派对。", "visual_description": "主角来到门店。", "action": "走向入口。", "motion_intention": "平稳跟随", "generation_strategy": "scene_anchor_then_incremental_composite", "image_count": 1, "audio_ref": null, "audio_role": "dialogue", "lip_sync_required": true, "approved_asset_id": "P01_IMAGE", "video_asset_id": "P01_VIDEO"},
-    {"shot_id": "P02", "title": "选购商品", "duration": 4, "scene_id": "SCENE_STORE", "scene_anchor_id": "ANCHOR_STORE", "character_id": "CHAR01", "product_refs": ["DEMO_ONLY_001"], "voiceover_es": "Busco luces para decorar mi casa.", "translation_zh": "我要找一些灯来装饰家里。", "visual_description": "主角查看商品。", "action": "拿起装饰灯。", "motion_intention": "缓慢推近", "generation_strategy": "reuse_approved_anchor", "image_count": 1, "audio_ref": null, "audio_role": "narration", "lip_sync_required": false, "approved_asset_id": "P02_IMAGE", "video_asset_id": "P02_VIDEO"},
-    {"shot_id": "P03", "title": "家庭布置", "duration": 4, "scene_id": "SCENE_HOME", "scene_anchor_id": "ANCHOR_HOME", "character_id": "CHAR01", "product_refs": ["DEMO_ONLY_001"], "voiceover_es": "Todo listo para recibir a mis amigos.", "translation_zh": "一切就绪，等朋友们到来。", "visual_description": "主角摆放派对装饰。", "action": "打开装饰灯。", "motion_intention": "固定机位", "generation_strategy": "scene_anchor_then_incremental_composite", "image_count": 1, "audio_ref": null, "audio_role": "dialogue", "lip_sync_required": true, "approved_asset_id": "P03_IMAGE", "video_asset_id": "P03_VIDEO"}
+    {
+      "shot_id": "P01",
+      "title": "门店开场",
+      "duration": 4,
+      "scene_id": "SCENE_STORE",
+      "scene_anchor_id": "ANCHOR_STORE",
+      "character_id": "CHAR01",
+      "product_refs": [],
+      "voiceover_es": "Hoy preparo una fiesta de Halloween.",
+      "translation_zh": "今天我要准备一场万圣节派对。",
+      "visual_description": "主角来到门店。",
+      "action": "走向入口。",
+      "motion_intention": "平稳跟随",
+      "generation_strategy": "scene_anchor_then_incremental_composite",
+      "image_count": 1,
+      "audio_ref": null,
+      "audio_role": "dialogue",
+      "lip_sync_required": true,
+      "approved_asset_id": "P01_IMAGE",
+      "video_asset_id": "P01_VIDEO",
+      "image_asset_ids": [
+        "P01_IMAGE"
+      ],
+      "image_generation": {
+        "anchor": {
+          "prompt": "模拟门店主通道锚点，保留参考图空间结构。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [
+            "SCENE_STORE"
+          ],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "ANCHOR_STORE"
+          ]
+        },
+        "incremental": {
+          "prompt": "主角来到门店。\n走向入口。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [
+            "CHAR01"
+          ],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "P01_IMAGE"
+          ],
+          "base_asset_id": "ANCHOR_STORE"
+        }
+      }
+    },
+    {
+      "shot_id": "P02",
+      "title": "选购商品",
+      "duration": 4,
+      "scene_id": "SCENE_STORE",
+      "scene_anchor_id": "ANCHOR_STORE",
+      "character_id": "CHAR01",
+      "product_refs": [
+        "DEMO_ONLY_001"
+      ],
+      "voiceover_es": "Busco luces para decorar mi casa.",
+      "translation_zh": "我要找一些灯来装饰家里。",
+      "visual_description": "主角查看商品。",
+      "action": "拿起装饰灯。",
+      "motion_intention": "缓慢推近",
+      "generation_strategy": "reuse_approved_anchor",
+      "image_count": 1,
+      "audio_ref": null,
+      "audio_role": "narration",
+      "lip_sync_required": false,
+      "approved_asset_id": "P02_IMAGE",
+      "video_asset_id": "P02_VIDEO",
+      "image_asset_ids": [
+        "P02_IMAGE"
+      ],
+      "image_generation": {
+        "anchor": {
+          "prompt": "模拟门店主通道锚点，保留参考图空间结构。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [
+            "SCENE_STORE"
+          ],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "ANCHOR_STORE"
+          ]
+        },
+        "incremental": {
+          "prompt": "主角查看商品。\n拿起装饰灯。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [
+            "CHAR01",
+            "PRODUCT_DEMO"
+          ],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "P02_IMAGE"
+          ],
+          "base_asset_id": "ANCHOR_STORE"
+        }
+      }
+    },
+    {
+      "shot_id": "P03",
+      "title": "家庭布置",
+      "duration": 4,
+      "scene_id": "SCENE_HOME",
+      "scene_anchor_id": "ANCHOR_HOME",
+      "character_id": "CHAR01",
+      "product_refs": [
+        "DEMO_ONLY_001"
+      ],
+      "voiceover_es": "Todo listo para recibir a mis amigos.",
+      "translation_zh": "一切就绪，等朋友们到来。",
+      "visual_description": "主角摆放派对装饰。",
+      "action": "打开装饰灯。",
+      "motion_intention": "固定机位",
+      "generation_strategy": "scene_anchor_then_incremental_composite",
+      "image_count": 1,
+      "audio_ref": null,
+      "audio_role": "dialogue",
+      "lip_sync_required": true,
+      "approved_asset_id": "P03_IMAGE",
+      "video_asset_id": "P03_VIDEO",
+      "image_asset_ids": [
+        "P03_IMAGE"
+      ],
+      "image_generation": {
+        "anchor": {
+          "prompt": "模拟家庭场景锚点，不添加人物。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "ANCHOR_HOME"
+          ]
+        },
+        "incremental": {
+          "prompt": "主角摆放派对装饰。\n打开装饰灯。",
+          "negative_prompt": "不改变品牌、人物身份和空间结构；不添加字幕。",
+          "reference_asset_ids": [
+            "CHAR01",
+            "PRODUCT_DEMO"
+          ],
+          "keep_fixed": [
+            "空间结构",
+            "品牌"
+          ],
+          "add_elements": [],
+          "output_asset_ids": [
+            "P03_IMAGE"
+          ],
+          "base_asset_id": "ANCHOR_HOME"
+        }
+      }
+    }
   ],
   "assets": [
-    {"asset_id": "CHAR01", "character_id": "角色01", "asset_type": "character", "description": "模拟人物参考", "local_path": "素材/人物.png", "source_type": "existing", "qc_status": "pending_check"},
-    {"asset_id": "SCENE_STORE", "asset_type": "scene", "description": "模拟门店参考", "local_path": "素材/门店.png", "source_type": "existing", "qc_status": "pending_check"},
-    {"asset_id": "PRODUCT_DEMO", "sku_id": "DEMO_ONLY_001", "asset_type": "product", "description": "模拟装饰灯非真实SKU", "local_path": "素材/商品.png", "source_type": "existing", "qc_status": "pending_check"},
-    {"asset_id": "AUDIO_FIXTURE", "asset_type": "audio", "description": "测试音频非西语口播", "local_path": "素材/测试音频.wav", "source_type": "existing", "qc_status": "pending_check"}
+    {
+      "asset_id": "CHAR01",
+      "character_id": "角色01",
+      "asset_type": "character",
+      "description": "模拟人物参考",
+      "local_path": "素材/人物.png",
+      "source_type": "existing",
+      "qc_status": "pending_check"
+    },
+    {
+      "asset_id": "SCENE_STORE",
+      "asset_type": "scene",
+      "description": "模拟门店参考",
+      "local_path": "素材/门店.png",
+      "source_type": "existing",
+      "qc_status": "pending_check"
+    },
+    {
+      "asset_id": "PRODUCT_DEMO",
+      "sku_id": "DEMO_ONLY_001",
+      "asset_type": "product",
+      "description": "模拟装饰灯非真实SKU",
+      "local_path": "素材/商品.png",
+      "source_type": "existing",
+      "qc_status": "pending_check"
+    },
+    {
+      "asset_id": "AUDIO_FIXTURE",
+      "asset_type": "audio",
+      "description": "测试音频非西语口播",
+      "local_path": "素材/测试音频.wav",
+      "source_type": "existing",
+      "qc_status": "pending_check"
+    }
   ],
   "outputs": [
-    {"asset_id": "ANCHOR_STORE", "asset_type": "scene_anchor", "description": "门店主通道", "shot_id": "P01", "shot_ids": ["P01", "P02"]},
-    {"asset_id": "ANCHOR_HOME", "asset_type": "scene_anchor", "description": "家庭布置", "shot_id": "P03"},
-    {"asset_id": "P01_IMAGE", "asset_type": "storyboard_image", "description": "门店开场", "shot_id": "P01"},
-    {"asset_id": "P02_IMAGE", "asset_type": "storyboard_image", "description": "选购商品", "shot_id": "P02"},
-    {"asset_id": "P03_IMAGE", "asset_type": "storyboard_image", "description": "家庭布置", "shot_id": "P03"},
-    {"asset_id": "P01_VIDEO", "asset_type": "video", "description": "门店开场", "shot_id": "P01"},
-    {"asset_id": "P02_VIDEO", "asset_type": "video", "description": "选购商品", "shot_id": "P02"},
-    {"asset_id": "P03_VIDEO", "asset_type": "video", "description": "家庭布置", "shot_id": "P03"}
+    {
+      "asset_id": "ANCHOR_STORE",
+      "asset_type": "scene_anchor",
+      "description": "门店主通道",
+      "shot_id": "P01",
+      "shot_ids": [
+        "P01",
+        "P02"
+      ]
+    },
+    {
+      "asset_id": "ANCHOR_HOME",
+      "asset_type": "scene_anchor",
+      "description": "家庭布置",
+      "shot_id": "P03"
+    },
+    {
+      "asset_id": "P01_IMAGE",
+      "asset_type": "storyboard_image",
+      "description": "门店开场",
+      "shot_id": "P01"
+    },
+    {
+      "asset_id": "P02_IMAGE",
+      "asset_type": "storyboard_image",
+      "description": "选购商品",
+      "shot_id": "P02"
+    },
+    {
+      "asset_id": "P03_IMAGE",
+      "asset_type": "storyboard_image",
+      "description": "家庭布置",
+      "shot_id": "P03"
+    },
+    {
+      "asset_id": "P01_VIDEO",
+      "asset_type": "video",
+      "description": "门店开场",
+      "shot_id": "P01"
+    },
+    {
+      "asset_id": "P02_VIDEO",
+      "asset_type": "video",
+      "description": "选购商品",
+      "shot_id": "P02"
+    },
+    {
+      "asset_id": "P03_VIDEO",
+      "asset_type": "video",
+      "description": "家庭布置",
+      "shot_id": "P03"
+    }
   ]
 }
