@@ -37,5 +37,7 @@ This helper has no generation/quote/approval operation. Video model support and 
 Use `scripts/pipeline_handoff.py image-anchor|image-incremental|video|capcut` for preview-gated, approved-only downstream plans. `--shot-id` may repeat to select unaffected shots during scoped re-review. These commands prepare plans only; they do not run generators.
 Use its `record-task` mode to save a submit ID, node, model and public parameters before an independently authorized generation call. Recovery queries that original submit ID; an absent/unknown result never authorizes a fresh paid request.
 
+Image task plans include a generation fingerprint bound to the exact recipe and approved reference versions/hashes. Preserve it on registration with `--generation-fingerprint`. Approval alone never means an old image matches a changed recipe: missing/different fingerprints require a current, version-bound owner reuse/regenerate decision (see the contract). Do not fabricate a fingerprint for legacy bytes. For `record-task`, declare the actual shot scope using repeatable `--shot-id` or `parameters.shot_id`; only that scope's approved references, including prompt placeholders, are accepted. Shared tasks must declare all their consumers.
+
 Default MIZAN delivery has no visible subtitles. Chinese translations support internal review only.
 Keep the generated video's embedded sound during editing; never add the user's source audio as a second track.

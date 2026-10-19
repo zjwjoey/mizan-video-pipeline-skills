@@ -509,6 +509,9 @@ class Bootstrap:
                            json.dumps(shot, ensure_ascii=False, indent=2), index=index)
 
     def register(self, asset):
+        fingerprint = asset.get("generation_fingerprint")
+        if fingerprint is not None and not re.fullmatch(r"sha256:[0-9a-f]{64}", fingerprint):
+            raise ValueError("generation_fingerprint must be the exact SHA256 fingerprint from the image task plan")
         if asset.get("qc_status") not in QC:
             raise ValueError("Invalid QC status")
         if asset.get("qc_status") == "approved" and not asset.get("qc_evidence"):
@@ -795,6 +798,7 @@ def main(argv=None):
     parser.add_argument("--file", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--asset-id")
+    parser.add_argument("--generation-fingerprint", help="Exact fingerprint from the submitted image task; never infer for legacy bytes")
     parser.add_argument("--source-type", choices=["existing", "generated"], default="generated")
     parser.add_argument("--version")
     parser.add_argument("--qc-status", choices=list(QC), default="pending_review")
@@ -846,7 +850,8 @@ def main(argv=None):
                     if path.suffix.lower() not in MEDIA:
                         raise ValueError("Unsupported extension")
                     job.register(dict(template, local_path=str(path), file_hash=file_hash(path), media_type=MEDIA[path.suffix.lower()],
-                                      source_type=args.source_type, qc_status=args.qc_status, qc_evidence=args.evidence))
+                                      source_type=args.source_type, qc_status=args.qc_status, qc_evidence=args.evidence,
+                                      **({"generation_fingerprint": args.generation_fingerprint} if args.generation_fingerprint else {})))
                 if args.mode in ("sync", "resume", "register"):
                     job.sync()
             print(json.dumps(job.status(), ensure_ascii=False, indent=2))

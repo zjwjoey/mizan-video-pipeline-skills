@@ -9,7 +9,7 @@ from xml.sax.saxutils import escape
 import test_canvas_bootstrap as fixtures
 from canvas_bootstrap import extract_docx, generated_filename, validate_production, write_json, file_hash
 from canvas_preview import preview_status, require_preview
-from pipeline_handoff import build_plan
+from pipeline_handoff import build_plan, record_task
 from production_contract import normalize_production, image_contract_errors
 
 
@@ -24,11 +24,12 @@ class ContractTests(unittest.TestCase):
     def inputs(self, job):
         for aid in list(job.state["assets"]): job.review(aid, "v01", "approved", "synthetic input QC")
 
-    def output(self, job, aid, kind="storyboard_image"):
+    def output(self, job, aid, kind="storyboard_image", fingerprint=None):
         path = self.root / (aid + ".png")
         path.write_bytes(aid.encode())
         v = job.register(dict(asset_id=aid, asset_type=kind, description=aid, local_path=str(path),
-                              file_hash=file_hash(path), source_type="generated", qc_status="pending_review", media_type="image"))
+                              file_hash=file_hash(path), source_type="generated", qc_status="pending_review", media_type="image",
+                              **({"generation_fingerprint": fingerprint} if fingerprint else {})))
         job.sync_asset(v, 0)
         job.review(aid, "v01", "approved", "synthetic output QC")
         return v
@@ -246,6 +247,110 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(data["requires_structured_mapping"], data)
         self.assertEqual(data["production"]["shots"][0]["image_generation"], p["shots"][0]["image_generation"])
         self.assertTrue(data["production"]["source_provenance"])
+
+    def image_fixture(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        self.output(job, "ANCHOR_STORE", "scene_anchor")
+        task = build_plan(job.production, job.state, "image-incremental", ["P01"])["tasks"][0]
+        return job, task
+
+    def decision(self, job, task, choice):
+        spec = job.production["shots"][0]["image_generation"]["incremental"]
+        spec["output_decisions"] = {"P01_IMAGE": {"choice": choice, "fingerprint": task["generation_fingerprint"],
+                                              "version": "v01", "reviewer": "synthetic owner", "evidence": "explicit offline decision"}}
+        job.production["script_version"] = "v02"
+        job.script()
+        self.preview(job)
+
+    def test_matching_generation_fingerprint_reuses_approved_output(self):
+        job, task = self.image_fixture()
+        self.output(job, "P01_IMAGE", fingerprint=task["generation_fingerprint"])
+        self.assertEqual(build_plan(job.production, job.state, "image-incremental", ["P01"])["tasks"], [])
+
+    def test_legacy_approved_image_needs_explicit_current_reuse_decision(self):
+        job, task = self.image_fixture()
+        old = self.output(job, "P01_IMAGE")
+        with self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
+            build_plan(job.production, job.state, "image-incremental", ["P01"])
+        self.decision(job, task, "reuse")
+        self.assertEqual(build_plan(job.production, job.state, "image-incremental", ["P01"])["tasks"], [])
+        self.assertNotIn("generation_fingerprint", old)  # no invented provenance for old bytes
+
+    def test_explicit_regeneration_retains_old_approval_until_new_qc(self):
+        job, task = self.image_fixture()
+        self.output(job, "P01_IMAGE")
+        self.decision(job, task, "regenerate")
+        tasks = build_plan(job.production, job.state, "image-incremental", ["P01"])["tasks"]
+        self.assertEqual(tasks[0]["supersedes_version"], "v01")
+        self.assertEqual(job.state["approved_versions"]["P01_IMAGE"], "v01")
+
+    def test_changed_prompt_locks_negative_or_reference_version_changes_fingerprint(self):
+        job, task = self.image_fixture()
+        self.output(job, "P01_IMAGE", fingerprint=task["generation_fingerprint"])
+        original = copy.deepcopy(job.production)
+        for revision, (field, value) in enumerate((("prompt", "新提示词"), ("negative_prompt", "新禁止项"), ("keep_fixed", ["新锁定"]), ("add_elements", ["新道具"])), start=2):
+            job.production = copy.deepcopy(original)
+            job.production["shots"][0]["image_generation"]["incremental"][field] = value
+            job.production["script_version"] = f"v{revision:02}"
+            job.script()
+            self.preview(job)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
+                build_plan(job.production, job.state, "image-incremental", ["P01"])
+
+    def test_reuse_decision_cannot_survive_a_new_prompt_change(self):
+        job, task = self.image_fixture()
+        self.output(job, "P01_IMAGE")
+        self.decision(job, task, "reuse")
+        job.production["shots"][0]["image_generation"]["incremental"]["prompt"] += " changed again"
+        job.production["script_version"] = "v03"
+        job.script()
+        self.preview(job)
+        with self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
+            build_plan(job.production, job.state, "image-incremental", ["P01"])
+
+    def test_scoped_task_can_register_unaffected_shot_only(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        (self.root / self.p["assets"][2]["local_path"]).write_bytes(b"changed P02 P03 product")
+        char_ref = "node:" + job.state["assets"]["CHAR01"][0]["canvas_node_id"]
+        params = {"shot_id": "P01", "refs": [char_ref]}
+        task = record_task(job, "P01-only", "node_target", "live", params)
+        self.assertEqual(task["shot_ids"], ["P01"])
+        self.assertEqual(task, record_task(job, "P01-only", "node_target", "live", params))
+        with self.assertRaisesRegex(ValueError, "PREVIEW_REVIEW_REQUIRED"):
+            record_task(job, "P02", "node_target", "live", {"shot_id": "P02"})
+        with self.assertRaisesRegex(ValueError, "PREVIEW_REVIEW_REQUIRED"):
+            record_task(job, "shared", "node_target", "live", {}, ["P01", "P02"])
+
+    def test_scoped_task_rejects_unrelated_refs_and_prompt_placeholders(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        v = job.state["assets"]["PRODUCT_DEMO"][0]
+        for ref in ("node:" + v["canvas_node_id"], "res:" + v["canvas_resource_id"]):
+            for params in ({"shot_id": "P01", "refs": [ref]}, {"shot_id": "P01", "prompt": "把{{" + ref + "}}放入画面"}):
+                with self.subTest(params=params), self.assertRaisesRegex(ValueError, "outside task shot scope"):
+                    record_task(job, "bad", "node_target", "live", params)
+        self.assertNotIn("bad", job.state["tasks"])
+
+    def test_task_scope_required_known_and_matches_parameters(self):
+        job = self.sync()
+        self.preview(job)
+        for params, scope in (({}, None), ({}, ["P99"]), ({}, []), ({"shot_id": "P02"}, ["P01"])):
+            with self.subTest(scope=scope), self.assertRaises(ValueError): record_task(job, "bad", "node_target", "live", params, scope)
+        self.assertNotIn("bad", job.state["tasks"])
+
+    def test_reference_version_change_cannot_reuse_same_image_fingerprint(self):
+        job, task = self.image_fixture()
+        self.output(job, "P01_IMAGE", fingerprint=task["generation_fingerprint"])
+        newer = fixtures.BootstrapTests.new_character_version(self, job)
+        job.review("CHAR01", newer["version"], "approved", "synthetic new ref")
+        self.preview(job)
+        with self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
+            build_plan(job.production, job.state, "image-incremental", ["P01"])
 
 
 if __name__ == "__main__": unittest.main()

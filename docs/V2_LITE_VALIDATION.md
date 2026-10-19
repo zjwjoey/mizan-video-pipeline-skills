@@ -4,6 +4,16 @@ Validation date: 2026-10-19, Asia/Shanghai. Baseline main: `2ae7ed3`. Developmen
 
 ## Delivery status: CANVAS_BOOTSTRAP_PARTIAL
 
+### Small follow-up patch: recipe reuse and scoped task journal
+
+The two new review boundaries are patched without new Skills, architecture changes, paid calls or expanded CI matrix:
+
+- Approved image IDs no longer skip tasks unconditionally. Plans fingerprint exact recipe/negative/locks/additions, ordered approved reference versions/hashes, output identity and format/engine. New registration can preserve that submitted fingerprint. Legacy/mismatched outputs require an explicit reviewer/evidence decision bound to current fingerprint and selected old version: reuse or regenerate. Reconfirmation of the script alone does not authorize reuse.
+- `record_task` requires known explicit shot scope, uses the same scoped preview gate as plans, records consumers and verifies every node/resource reference and prompt placeholder against that scope's declared approved materials. Unrelated affected shots do not block an otherwise unaffected task; shared scopes still block if any consumer needs review.
+- Nine new local regressions cover matching/missing/stale fingerprints, prompt/negative/locks/additions/reference-version changes, explicit regenerate/reuse and old-approval preservation, unaffected-vs-shared registration, node/resource/placeholder scope escapes and unknown/contradictory scope. Total: **72 tests** locally passed. The unchanged Windows/Linux × Python 3.11/3.12 CI matrix will verify this follow-up commit independently; earlier CI totals below are historical.
+
+This is not real image/video production acceptance. Real business trial and owner approvals remain separate and were not started by this patch.
+
 ### PR review repair round (2026-10-19)
 
 CI exposed a Windows runner 8.3-path alias (`RUNNER~1`) versus resolved long-path mismatch in CapCut preflight. Both the media root and file now canonicalize before containment and URL checks; an additional regression preserves outside-directory rejection. The updated suite has **63 distinct tests**. The initial run's Ubuntu jobs passed; its Windows failure is retained in GitHub history rather than reported as a pass. Check the latest follow-up run for the repaired matrix outcome.

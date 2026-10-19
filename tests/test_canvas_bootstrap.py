@@ -216,8 +216,8 @@ class BootstrapTests(unittest.TestCase):
     def test_paid_task_record_and_recovery_only_queries(self):
         job = self.sync()
         job.approve_preview("offline test owner", "synthetic fixture only", owner_confirmed=True)
-        task = record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4})
-        self.assertEqual(task, record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4}))
+        task = record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4, "shot_id": "P01"})
+        self.assertEqual(task, record_task(job, "P01-video-v01", "node_test", "live-model", {"duration": 4, "shot_id": "P01"}))
         self.cli.calls.clear()
         job.reconcile()
         self.assertEqual(job.state["tasks"]["P01-video-v01"]["remote_state"], "unknown")

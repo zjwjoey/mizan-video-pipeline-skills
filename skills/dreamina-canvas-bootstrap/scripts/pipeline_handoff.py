@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 import uuid
 
 from canvas_bootstrap import (Bootstrap, CLIError, file_hash, generated_filename, now, project_lock,
                               read_json, write_json)
-from canvas_preview import require_preview
+from canvas_preview import require_preview, signature
 from production_contract import canonical_strategy
 
 
@@ -42,9 +43,6 @@ def build_image_tasks(production, state, stage, shot_ids=None):
                 approved(state, spec["reuse_asset_id"], {"scene_anchor"})
                 continue
             for output_id in spec["output_asset_ids"]:
-                if output_id in state["approved_versions"]:
-                    approved(state, output_id)
-                    continue
                 refs = list(spec["reference_asset_ids"])
                 if spec.get("base_asset_id"):
                     refs.insert(0, spec["base_asset_id"])
@@ -61,6 +59,21 @@ def build_image_tasks(production, state, stage, shot_ids=None):
                         "reference_asset_ids": refs, "refs": ["node:" + v["canvas_node_id"] for v in sources],
                         "reference_files": [v["local_path"] for v in sources], "base_asset_id": spec.get("base_asset_id"),
                         "canvas_project_id": state["canvas_project_id"]}
+                task["generation_fingerprint"] = "sha256:" + signature({
+                    "recipe": {k: v for k, v in spec.items() if k != "output_decisions"},
+                    "stage": name, "output_asset_id": output_id,
+                    "format": production.get("format"), "image_engine": production.get("image_engine"),
+                    "references": [{k: v.get(k) for k in ("asset_id", "version", "file_hash", "canvas_node_id", "canvas_resource_id")} for v in sources]})
+                if output_id in state["approved_versions"]:
+                    selected = approved(state, output_id)
+                    if selected.get("generation_fingerprint") == task["generation_fingerprint"]:
+                        continue
+                    decision = spec.get("output_decisions", {}).get(output_id, {})
+                    if (decision.get("fingerprint") != task["generation_fingerprint"] or decision.get("version") != selected["version"]
+                            or not decision.get("reviewer") or not decision.get("evidence") or decision.get("choice") not in ("reuse", "regenerate")):
+                        raise ValueError("IMAGE_REUSE_DECISION_REQUIRED: " + output_id + " approved version differs from current recipe " + task["generation_fingerprint"])
+                    if decision["choice"] == "reuse": continue
+                    task["supersedes_version"] = selected["version"]
                 if output_id in tasks and any(tasks[output_id][k] != v for k, v in task.items()):
                     raise ValueError("Conflicting recipes for shared output: " + output_id)
                 task["shot_ids"] = list(dict.fromkeys(tasks.get(output_id, {}).get("shot_ids", []) + [shot["shot_id"]]))
@@ -152,22 +165,53 @@ def build_plan(production, state, stage, shot_ids=None):
             **production.get("format", {}), "paid_operations": 0}
 
 
-def record_task(job, key, node_id, model, parameters):
+def record_task(job, key, node_id, model, parameters, shot_ids=None):
     """Preparation only. Never submit automatically, including during resume."""
-    require_preview(job.production, job.state)
+    scope = list(shot_ids) if shot_ids is not None else [parameters.get("shot_id")]
+    known = {s["shot_id"]: s for s in job.production["shots"]}
+    if not scope or any(not isinstance(s, str) or s not in known for s in scope):
+        raise ValueError("Task needs explicit known shot scope (--shot-id or parameters.shot_id)")
+    scope = sorted(set(scope))
+    if parameters.get("shot_id") is not None and scope != [parameters["shot_id"]]:
+        raise ValueError("Task parameter shot_id conflicts with declared shot scope")
+    require_preview(job.production, job.state, scope)
     allowed = {"mode", "prompt", "ratio", "resolution", "duration", "refs", "audio_role", "lip_sync_required", "count", "shot_id", "version"}
     if not set(parameters) <= allowed:
         raise ValueError("Only public generation parameters may be journaled; no tokens/provider payloads")
-    if any(not ref.startswith(("node:", "res:")) for ref in parameters.get("refs", [])):
+    refs = parameters.get("refs", [])
+    if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.startswith(("node:", "res:")) for ref in refs):
         raise ValueError("Journal references must use public node/resource IDs, not signed URLs")
+    if not isinstance(parameters.get("prompt", ""), str):
+        raise ValueError("Task prompt must be text")
+    refs = refs + [kind + ":" + identity for kind, identity in re.findall(r"\{\{(node|res):([^{}]+)\}\}", parameters.get("prompt", ""))]
+    permitted = set()
+    for sid in scope:
+        shot = known[sid]
+        permitted.update(a for a in (shot.get("character_id"), shot.get("scene_id"), shot.get("scene_anchor_id"), shot.get("audio_ref")) if a)
+        permitted.update(shot.get("image_asset_ids", []))
+        permitted.update(a["asset_id"] for a in job.production["assets"] if a.get("sku_id") in shot["product_refs"])
+        for spec in shot["image_generation"].values():
+            permitted.update(spec.get("reference_asset_ids", []))
+            permitted.update(a for a in (spec.get("base_asset_id"), spec.get("reuse_asset_id")) if a)
+    allowed_refs = {}
+    for aid in permitted:
+        selected = job.state["approved_versions"].get(aid)
+        v = next((v for v in job.state["assets"].get(aid, []) if v["version"] == selected), None)
+        if v:
+            for kind, field in (("node", "canvas_node_id"), ("res", "canvas_resource_id")):
+                allowed_refs.setdefault(kind + ":" + v[field], []).append(aid)
+    for ref in refs:
+        if ref not in allowed_refs:
+            raise ValueError("Reference outside task shot scope or not approved: " + ref)
+        for aid in allowed_refs[ref]: approved(job.state, aid)
     tasks = job.state["tasks"]
     if key in tasks:
         task = tasks[key]
-        if task["canvas_node_id"] != node_id or task["model"] != model or task["parameters"] != parameters:
+        if task.get("shot_ids") != scope or task["canvas_node_id"] != node_id or task["model"] != model or task["parameters"] != parameters:
             raise ValueError("Task key already bound to different inputs; new intentional revision needs a new key")
         return task
     task = {"task_key": key, "canvas_node_id": node_id, "submit_id": str(uuid.uuid4()), "model": model,
-            "parameters": parameters, "state": "prepared_not_submitted", "created_at": now(),
+            "parameters": parameters, "shot_ids": scope, "state": "prepared_not_submitted", "created_at": now(),
             "recovery_action": "query_same_submit_id_only"}
     tasks[key] = task
     job.save()
@@ -191,7 +235,7 @@ def main():
         if args.mode == "record-task":
             if not all((args.task_key, args.node_id, args.model, args.parameters)):
                 parser.error("record-task needs --task-key --node-id --model --parameters")
-            result = record_task(job, args.task_key, args.node_id, args.model, read_json(args.parameters))
+            result = record_task(job, args.task_key, args.node_id, args.model, read_json(args.parameters), args.shot_id)
         else:
             result = build_plan(job.production, job.state, args.mode, args.shot_id)
         write_json(args.output, result)

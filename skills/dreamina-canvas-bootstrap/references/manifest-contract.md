@@ -72,6 +72,36 @@ Video plans use every approved execution image. First/last-frame plans expose `f
 
 ## Whole-Canvas preview approval
 
+### Image recipe identity and explicit reuse
+
+Every image task includes `generation_fingerprint: sha256:...`, derived from the exact stage recipe (prompt, negative, ordered refs, locks, additions, optional generation parameters), output ID, format/image engine, and selected reference versions/content hashes/Canvas identities. Save the fingerprint from the actually submitted task when registering a **new output**:
+
+```powershell
+python canvas_bootstrap.py register --production production_manifest.json --asset-id P03_IMAGE --file "D:\新图.png" --generation-fingerprint "sha256:<64 lowercase hex digits from the submitted image task>"
+```
+
+Do not recalculate this value after generation from a changed manifest or attach one retroactively to an unknown legacy image. Registering identical bytes returns the existing version without rewriting its provenance. Asset QC and generation-configuration identity are separate checks.
+
+An approved output skips generation only if its saved fingerprint matches the current task. A missing/different fingerprint stops with `IMAGE_REUSE_DECISION_REQUIRED`, including the current fingerprint. The owner can explicitly select reuse of that approved version or regeneration via the stage's `output_decisions` map:
+
+```json
+{"output_decisions": {"P03_IMAGE": {
+  "choice": "reuse",
+  "version": "v01",
+  "fingerprint": "sha256:<current task fingerprint>",
+  "reviewer": "负责人",
+  "evidence": "已对照本次新提示词/参考版本核对旧图，明确选择复用"
+}}}
+```
+
+Use `choice: regenerate` for a new task; the old version remains approved until the new output passes QC. This decision is bound to both the old approved version and the **current** fingerprint; another recipe/reference change invalidates it. Record the owner decision in the source manifest, increment the script version, sync and obtain the required preview confirmation; a fresh script/preview approval alone does not supply an image reuse decision. `reuse_asset_id` remains an explicit source-anchor reuse specification, not a new generated-output recipe.
+
+### Scoped paid-task preparation
+
+`pipeline_handoff.py record-task --shot-id P01 ...` (repeatable for a genuinely shared task) or `parameters.shot_id` must name known nonempty shot scope; contradictory declarations fail. `record_task(..., shot_ids=[...])` uses the same rule. The preview gate checks those consumers only, so an unrelated P02 source change need not block a P01 task. A shared P01/P02 task still checks both.
+
+All `refs` and `{{node:...}}`/`{{res:...}}` prompt placeholders must resolve to approved synchronized versions actually declared for those shots: stage references/base/reused anchor, execution images, character, scene, real SKU or prepared audio. Arbitrary nodes/resources, other shots' products, unapproved versions and stale/corrupted snapshots are rejected before any journal write. The persisted task records `shot_ids`, and a task key cannot be rebound to another scope. These checks prepare a journal only; model capability and paid authorization remain separate gates.
+
 Synchronization alone leaves `CANVAS_PREVIEW_PENDING`. After the owner actually previews the current Canvas, run:
 
 ```powershell
