@@ -6,6 +6,8 @@ Validation date: 2026-10-19, Asia/Shanghai. Baseline main: `2ae7ed3`. Developmen
 
 ### PR review repair round (2026-10-19)
 
+CI exposed a Windows runner 8.3-path alias (`RUNNER~1`) versus resolved long-path mismatch in CapCut preflight. Both the media root and file now canonicalize before containment and URL checks; an additional regression preserves outside-directory rejection. The updated suite has **63 distinct tests**. The initial run's Ubuntu jobs passed; its Windows failure is retained in GitHub history rather than reported as a pass. Check the latest follow-up run for the repaired matrix outcome.
+
 The four P0 contract/gate changes and four P1 state/version changes are implemented on the original V2 branch, without a sixth Skill or main merge. Bootstrap remains **PARTIAL for real production readiness** until the owner approves the real project's preview. **VIDEO_PIPELINE_READY is not established**: paid generation/audio/lip-sync/export and actual Jianying GUI validation remain outstanding. A synthetic gate approval is not real production approval.
 
 | Review item | Repair / observed evidence |

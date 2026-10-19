@@ -24,6 +24,21 @@ gpt = module("gpt_client", ROOT / "skills/gpt-image-ext-material-generation/scri
 
 
 class DownstreamTests(unittest.TestCase):
+    def test_relative_media_root_is_canonicalized_without_weakening_boundary(self):
+        from urllib.parse import unquote
+        root = self.root / "资料"
+        root.mkdir()
+        video = root / "片段.mp4"
+        video.write_bytes(b"fixture")
+        alias = root / ".." / "资料"
+        config = copy.deepcopy(self.config)
+        config["shots"][0]["video"] = video.name
+        with patch.object(capcut, "probe_media", return_value=self.probe):
+            self.assertEqual(len(capcut.preflight(config, alias, "ffprobe")), 1)
+        self.assertTrue(unquote(capcut.encoded_url(alias, video.resolve(), 9000)).endswith("/片段.mp4"))
+        config["shots"][0]["video"] = "../镜头1.mp4"
+        with self.assertRaises(ValueError): capcut.preflight(config, alias, "ffprobe")
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="MIZAN_剪映_")
         self.addCleanup(self.tmp.cleanup)

@@ -64,7 +64,7 @@ def micros(seconds: float) -> int:
 
 
 def encoded_url(media_root: Path, file_path: Path, port: int) -> str:
-    relative = file_path.relative_to(media_root).as_posix()
+    relative = file_path.resolve().relative_to(media_root.resolve()).as_posix()
     encoded = "/".join(quote(part) for part in relative.split("/"))
     return f"http://127.0.0.1:{port}/{encoded}"
 
@@ -85,6 +85,9 @@ def probe_media(path: Path, ffprobe: str) -> dict:
 
 
 def preflight(config: dict, media_root: Path, ffprobe: str) -> list[dict]:
+    # Resolve both sides: Windows TEMP may contain an 8.3 alias such as RUNNER~1.
+    # Keep the containment check; normalizing only the file causes false escapes.
+    media_root = media_root.resolve()
     shots, ids, previous = config.get("shots", []), set(), 0
     if not shots:
         raise ValueError("config.shots is empty")
