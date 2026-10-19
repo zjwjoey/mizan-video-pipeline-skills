@@ -17,10 +17,10 @@ Turn a locked narration script into an executable visual plan. The deliverable m
 ## Compile the board
 
 1. Retain the script's scene IDs and time boundaries. Split each scene into 2–4 atomic shots only when the user has not supplied atomic shots; the child IDs should be stable (for example, `P03-A`, `P03-B`).
-2. Give every shot exact in/out timecode, planned duration, framing, camera movement, subject action, visible products, and an edit purpose. Sum all shots to the scripted duration with no gaps or overlaps.
+2. Give every shot exact in/out timecode, planned duration, framing, camera movement, subject action, visible products, and an edit purpose. Sum all shots to the scripted duration with no gaps or overlaps. When the owner will supply per-shot audio before video generation, map the exact local file to `audio_ref` for every shot and preserve its `audio_role` and `lip_sync_required` values; do not invent or generate missing audio.
 3. Establish a `Continuity lock` and `Anchor plan` before per-shot prompts. The lock covers presenter, wardrobe, store/location, lighting palette, product condition, camera language, and safety/brand restrictions. The anchor plan assigns one stable `host_anchor_id` and one `scene_anchor_id` to every contiguous sequence, plus optional product reference IDs. Asset generation must use those anchors as its first references rather than recreating the scene from prose each time.
 4. Use the user's supplied image prompt verbatim when one exists. If no prompt is supplied, write one in the language preferred by the selected generation tool. In either case, keep continuity anchors, text/VO/caption layers, and API parameters outside the user-authored creative prompt unless the user asks to change it.
-5. Specify a `Material manifest` with stable IDs. For each requested asset, include its source (`generate`, `capture`, `brand-supplied`, or `record`), required duration, aspect ratio, shot consumers, and acceptance test.
+5. Specify a `Material manifest` with stable IDs. For each requested asset, include its source (`generate`, `capture`, `brand-supplied`, or `record`), required duration, aspect ratio, shot consumers, and acceptance test. Treat the owner's prepared audio as a required video-generation input: record `audio_ref` per shot so the downstream Dreamina Canvas stage can upload it, associate its Canvas audio node with the video node, and verify the selected model mode accepts audio references.
 6. Include a scene-level QC checklist and a machine-readable handoff table containing at least `shot_id`, `source_asset_id`, `time_in`, `time_out`, `duration_s`, `voiceover`, `caption`, `transition_in`, `transition_out`, and `qc_status`.
 
 ## Output contract
@@ -43,6 +43,12 @@ Read [references/handoff-schema.md](references/handoff-schema.md) when a project
 - Prefer 1.5–3.5-second atomic shots for vertical social video; retain a longer shot only when the scripted action genuinely needs it.
 - Reserve readable campaign copy, legal text, price, and exact SKU information for provided assets or editable overlays; mark those as `needs_brand_asset` rather than fabricating them.
 - Mark every asset `pending` until material generation/capture and QC actually confirm it. A board is a plan, not evidence that footage exists.
+
+## Audio handoff for Canvas video generation
+
+- The owner prepares the audio files before video generation. Each video shot must map to its exact existing `audio_ref`, `audio_role`, and `lip_sync_required` setting; a missing mapping blocks that shot from video generation.
+- The Dreamina Canvas stage uploads/imports each audio file into the target canvas and records the resulting `canvas_audio_node_id`; it must attach that node to the shot's video-generation node using a currently supported model mode. The storyboard compiler records the mapping but does not assume a local path is automatically available to Canvas.
+- The AI-generated video handed to CapCut Mate is expected to carry the generated audio. CapCut Mate must not add the local source audio as a separate track or locally mux/mix it with the generated video.
 
 ## Owner-confirmed structured storyboard
 

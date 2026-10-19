@@ -1,139 +1,33 @@
 ---
 name: dreamina-cli
-description: Use when an agent needs Dreamina（即梦） login, sessions, task history, or image/video generation through the dreamina CLI.
+description: Generate MIZAN storyboard videos through the installed Dreamina Canvas CLI, using the owner's prepared per-shot audio as a video-generation reference. Use after storyboard images and audio are approved and before CapCut Mate assembly.
 ---
 
-# Dreamina CLI
+# Dreamina Canvas video generation
 
-Use this skill when you need Dreamina（即梦） image or video generation, login, session management, or task history work through `dreamina`.
+This MIZAN pipeline stage uses the Dreamina Canvas CLI and its installed `dreamina-canvas-cli` Skill. Do not substitute the separate legacy `dreamina` generator CLI. Read the Canvas Skill before operating, and treat its installed CLI schema, model discovery, authentication instructions, and safety gates as authoritative.
 
-即梦 is the Chinese product name of Dreamina. If the user says 即梦, treat it as Dreamina and use this skill.
+## Required inputs and gate
 
-This skill is intentionally short. Detailed flags and supported values belong to the CLI itself, so always treat `dreamina -h` and `dreamina <subcommand> -h` as the primary reference.
+- Start only from an owner-confirmed storyboard and image assets with `qc_status: pass`.
+- The owner prepares the Spanish audio before video generation. Every shot must have a real, existing `audio_ref` and an explicit `audio_role` (`dialogue` or `narration`) and `lip_sync_required` value. Do not synthesize, translate, trim, pad, replace, or infer audio unless the owner explicitly requests that change.
+- Before submitting a shot, verify the audio file and duration, then import/upload it into the target Dreamina Canvas using the installed Canvas CLI's documented resource/node workflow. Record the resulting Canvas audio node ID alongside the shot's `audio_ref`.
+- Query the target video model's current specification. Select a video mode that accepts audio references, then connect the shot's Canvas audio node to that shot's video-generation node in the Canvas. A local path in a prompt or task note does not count as an attached audio reference.
+- If audio is missing, inaccessible, too short/long for the selected model, or cannot be attached through the model's supported mode, stop that shot and report the precise issue. Do not generate a silent substitute.
 
-## What this tool is for
+## Generation and verification
 
-`dreamina` is the local CLI entrypoint for all currently exposed Dreamina（即梦） image and video generation workflows, plus the account/session operations around them.
+1. Follow `dreamina-canvas-cli` for version/schema checks, `auth status`, model discovery, canvas selection, resource upload, node references, pricing confirmation, submission, and recovery. Reuse the intended existing project when applicable.
+2. Resolve the approved shot image, host/scene anchors, and product references to Canvas-supported references. Preserve storyboard order and exact `shot_id`, approved prompt, `target_duration`, aspect ratio, resolution, and motion instructions.
+3. Attach the prepared per-shot audio node as a reference to the video generation. For dialogue, request natural visible speech matching that audio; for explicitly declared narration, do not direct visible speech. Do not add music or other audio.
+4. Save the Canvas project and record its project ID, video node ID, audio node ID, submitted operation ID, selected model/mode, parameters, and final status for every shot.
+5. Wait for terminal success and inspect/download the actual video. Confirm the clip contains the expected audio, timing, visual content, and requested speech behavior. A prompt or successful submission alone is not proof of audio inclusion or lip sync.
+6. Mark the output `qc_status: pass` only after review. Hand off the AI-generated video with its generated audio intact to CapCut Mate.
 
-Use it for:
+## Handoff fields
 
-- checking or reusing an existing Dreamina login session
-- checking account credit
-- managing sessions with `dreamina session`
-- clearing the local OAuth login state with `dreamina logout`
-- submitting image generation tasks
-- submitting video generation tasks
-- querying async task results and downloading result media
-- reviewing saved task history
+Retain at least `shot_id`, `source_image_ids`, `audio_ref`, `audio_role`, `lip_sync_required`, `canvas_project_id`, `canvas_audio_node_id`, `canvas_video_node_id`, `target_duration`, `video_asset_id`, `video_file`, `qc_status`, and `notes`. Do not store access tokens or private authentication material in project records.
 
-## Default workflow
+## Audio boundary for editing
 
-When using this CLI as an agent:
-
-1. Start with `dreamina -h`.
-2. Before using any command for real, run `dreamina <subcommand> -h`.
-3. Reuse the current login state unless the user explicitly asks you to `login`, `relogin`, `logout`, or finish a headless login with `checklogin`.
-4. When login is required, run `dreamina login` or `dreamina relogin`. The CLI uses OAuth Device Flow and prints `verification_uri`, `user_code`, and `device_code`.
-5. Default login waits for authorization to complete. With `--headless`, the CLI prints the device-flow material and exits; then use `dreamina login checklogin --device_code=<device_code>` to finish the login later.
-6. Be explicit about whether you are only reading help, submitting a real task, or querying an existing task.
-7. Warn the user before running commands that may consume credits.
-
-## Login completion: mandatory user-visible confirmation
-
-`dreamina login` / `dreamina relogin` prints OAuth Device Flow instructions and then waits for authorization. When the command finishes successfully, tell the user explicitly that login succeeded or the local OAuth state was reused.
-
-- **Do not** wait for the user to ask “登录好了吗”.
-- **Do not** stop after only sending the device code: keep the login command running, read stdout to the end, then confirm success/reuse/failure.
-- **Failure** must still be reported with the concrete error and the next step.
-
-## Choosing the right command
-
-At a high level:
-
-- Use `user_credit` to check budget.
-- Use `session` to create, list, search, rename, or delete sessions; all generator commands accept `--session=<id>` and `0` is the default session.
-- Use `query_result` when you already have a `submit_id`; add `--download_dir` when you want the generated media saved locally.
-- Use `list_task` to review recent saved tasks, especially when you want to filter by status or task type.
-- Use `text2image` for prompt-only image generation, `image2image` for image-guided editing, and `image_upscale` for upscaling.
-- Use `text2video` for prompt-only video generation.
-- Use `image2video` when one main image is enough.
-- Use `frames2video` for first-and-last-frame driven video generation.
-- For `seedance2.5` with `image2video` or `frames2video`, omit `--ratio`: reference-frame output follows the first frame and the CLI rejects an explicit ratio.
-- Use `multiframe2video` for Dreamina's fixed-model, image-only intelligent multi-frame flow: multiple images in, one coherent story video out. This command does not expose model selection.
-- Use `multimodal2video` for Dreamina's flagship video mode when the task needs all-around references across images, video, and audio, or when a Seedance 2.5 multi-image request needs model selection. If the legacy name `ref2video` appears, trust `dreamina -h` for the current command surface.
-
-For the exact flags and supported combinations, rely on each subcommand's `-h`.
-
-## Model selection rule
-
-Do not hardcode model support from this skill.
-
-If the user specifies a model, always check the relevant subcommand help before running it:
-
-```bash
-dreamina <subcommand> -h
-```
-
-Use the subcommand help to confirm:
-
-- whether that command exposes model selection
-- whether the requested model is supported on that command
-- what other constraints apply to that model, such as duration, ratio, resolution, or whether the command supports `model_version` at all
-
-Additional guidance:
-
-- some commands do not expose model selection at all
-- runtime availability and queue capacity can change
-- if the user does not specify a model, preserve the subcommand's current default instead of overriding it
-- if the user expresses a speed or quality preference, inspect the current help and select a model only when that preference requires an explicit choice
-
-## How to judge submit acceptance and terminal success
-
-Do not rely on shell exit code alone.
-
-For async generation commands, `submit_id` plus `gen_status=querying` means only that the submission was accepted. It is not evidence that generation finished successfully.
-
-Treat the task as terminally successful only when `gen_status=success`. If `gen_status=fail`, inspect `fail_reason` and reply proactively with the concrete reason.
-
-Use `--poll=N` on a generation command to wait for up to N seconds for a terminal result. If the command still returns `querying` after that bounded wait:
-
-- save the `submit_id`
-- continue with `query_result --submit_id=<id>` until the task reaches `success` or `fail`
-
-## Follow-up pattern for async tasks
-
-After a submit returns `querying` without reaching a terminal result during `--poll=N`:
-
-1. Save the `submit_id`.
-2. Use `query_result --submit_id=<id>` for follow-up.
-3. Use `list_task` when you want to review saved tasks in bulk.
-
-If you are running a test sweep, keep results in a machine-readable format so you can query the returned `submit_id` values later.
-
-## Important user-facing rules
-
-- Some generation commands are asynchronous; submit and query are separate steps.
-- Some models may require a one-time authorization on Dreamina Web.
-  If the CLI returns `AigcComplianceConfirmationRequired`, reply proactively: ask them to complete that web-side confirmation first, then retry.
-- Do not assume that different commands support the same models, ratios, durations, or resolutions.
-  Check each subcommand's `-h` before use.
-
-## Good agent behavior
-
-- Relay OAuth Device Flow instructions exactly enough for the user to complete login.
-- Always close the loop when the login command finishes with a user-visible confirmation.
-- Prefer small, reviewable batches when running real generation tasks.
-- Keep a record of the command, arguments, `submit_id`, and final status for every paid test you run.
-- If you are preparing a report, separate:
-  - help-only inspection
-  - submit-stage validation
-  - later async result follow-up
-
-## Owner-confirmed storyboard and user-provided audio
-
-- Generate video only from an owner-approved shot record and images with `qc_status: pass`. Use the exact `shot_id`, `scene_anchor_id`, `host_anchor_id`, approved image paths, `target_duration`, `motion_instruction`, and `audio_ref`.
-- Spanish audio is supplied by the user. Pass only the corresponding shot's `audio_ref`; do not synthesize, replace, or add music or other audio unless the owner explicitly requests it.
-- Default audio role is dialogue: `audio_role: dialogue` and `lip_sync_required: yes`. Request natural visible speech aligned to the supplied Spanish audio.
-- Set `lip_sync_required: no` only if the confirmed storyboard explicitly declares `audio_role: narration` / voiceover narration. In that case, do not direct the host to visibly speak the narration.
-- Do not guess missing `audio_ref`, `audio_role`, or lip-sync fields. Stop and request the missing shot specification before submitting.
-- Record the exact image and audio inputs, duration, ratio, resolution, command, `submit_id`, and terminal status. A lip-sync prompt is not proof; a human must review the downloaded video.
+The generated video is the audio-bearing source clip. CapCut Mate imports that video and subtitles only. Never add the original local `audio_ref` as a separate CapCut/Jianying audio track or locally mux/mix it with the generated video. If the generated video lacks or mishandles its audio, return the shot to review/regeneration; do not repair it by silently compositing the local audio during draft assembly.

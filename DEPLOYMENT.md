@@ -9,9 +9,9 @@
   → 锚定人物与场景
   → 按镜头 image_count 生成执行图
   → 人工/QC确认图片
-  → 使用用户提供的西班牙语音频生成视频
+  → 将用户准备好的逐镜西班牙语音频导入即梦画布并作为视频生成参考
   → 人工检查画面与口型
-  → 编排时间线和多语言字幕
+  → 使用已带生成音轨的 AI 视频编排时间线和多语言字幕
   → 生成并检查剪映/CapCut草稿
   → 用户要求时再渲染最终视频
 ```
@@ -22,8 +22,8 @@
 |---|---|---|
 | 分镜 | `video-storyboard-compiler` | 读取脚本与负责人确认的分镜；输出镜头表、锚点、素材清单和QC交接字段。 |
 | 图片 | `gpt-image-ext-material-generation` | 读取已批准提示词、人物/场景锚点和商品参考图；严格按每镜 `image_count` 生成。 |
-| 视频 | `dreamina-cli` | 读取通过图片QC的镜头素材和用户提供的 `audio_ref`；按 `target_duration` 与 `motion_instruction` 生成视频。 |
-| 时间线、字幕、草稿 | `capcut-mate-video-pipeline` | 按镜头顺序合并已批准视频，依据 `subtitle_es` / `subtitle_zh` 创建字幕轨，保存并校验剪映草稿。 |
+| 视频 | `dreamina-cli` | 读取通过图片QC的镜头素材，将已准备的 `audio_ref` 上传/导入目标即梦画布并关联至视频生成节点；按当前模型规格、`target_duration` 与 `motion_instruction` 生成带音频的视频。 |
+| 时间线、字幕、草稿 | `capcut-mate-video-pipeline` | 按镜头顺序导入已批准且带生成音轨的视频，依据 `subtitle_es` / `subtitle_zh` 创建字幕轨，保存并校验剪映草稿；不再单独导入本地原音频或合成音视频。 |
 
 ## 负责人确认与结构化分镜
 
@@ -36,7 +36,7 @@
 - `language_voiceover`、`subtitle_tracks`
 - `image_engine`、`video_engine`、QC 标准
 
-镜头记录建议包含 `shot_id`、`scene_group`、`scene_anchor_id`、`host_anchor_id`、起止时间、`product_refs`、`image_count`、`image_priority`、`material_mode`、`image_prompt_core`、`negative_prompt`、`voiceover_es`、`subtitle_es`、`subtitle_zh`、`target_duration`、`motion_instruction`、`audio_ref` 和 `qc_focus`。
+镜头记录建议包含 `shot_id`、`scene_group`、`scene_anchor_id`、`host_anchor_id`、起止时间、`product_refs`、`image_count`、`image_priority`、`material_mode`、`image_prompt_core`、`negative_prompt`、`voiceover_es`、`subtitle_es`、`subtitle_zh`、`target_duration`、`motion_instruction`、`audio_ref`、`audio_role`、`lip_sync_required` 和 `qc_focus`。音频文件由负责人在视频生成前准备；缺少逐镜音频映射时不得启动该镜视频生成。
 
 Agent 执行已确认内容，不重做创意解释或擅自改变镜头数、动作、商品、提示词、时长、字幕和音频映射。`image_count` 是每个镜头的图片数量，不是固定的项目图片总数。
 
@@ -48,12 +48,18 @@ Agent 执行已确认内容，不重做创意解释或擅自改变镜头数、�
 
 ## 西班牙语音频和口型同步规则
 
-- 西班牙语音频由用户提供；镜头使用分镜 `audio_ref` 对应的文件。
+- 西班牙语音频由用户在视频生成前准备；镜头必须使用分镜 `audio_ref` 对应的文件，并在目标即梦画布中创建/导入音频素材节点，再把该节点实际接入支持音频参考的视频生成模式。仅在提示词或记录中写本地路径不算接入成功。
 - 默认 `audio_role: dialogue`、`lip_sync_required: yes`。视频生成要求画面人物根据该音频自然说话并同步口型。
 - 只有负责人明确标记 `audio_role: narration` /“旁白音”时，才设置 `lip_sync_required: no`。
-- 不生成、替换、混入音乐或加入其他音频，除非用户明确提出。
+- 不生成、替换、混入音乐或加入其他音频，除非用户明确提出。每次使用前读取即梦画布当前模型规格，确认所选视频模式接受音频参考，且音频符合时长和素材数量限制。
 - 缺失 `audio_ref`、`audio_role` 或同步要求时，先补齐分镜，不推测。
-- 口型提示只是生成要求，不能当作已同步的证据。下载后需人工检查口型、音频是否为指定文件，以及是否出现额外音轨。
+- 口型提示只是生成要求，不能当作已同步的证据。下载后需人工检查口型、音频是否存在且对应指定输入，以及是否出现额外音轨。
+
+## 即梦画布与剪映的音频边界
+
+- 视频阶段使用本机安装的 `dreamina-canvas-cli` Skill 和 `dreamina-canvas` CLI；不要用另一套旧版 `dreamina` 生成 CLI 代替。CLI 登录、画布选择、文件导入、模型/模式和可用参数，以本机已安装 Skill 与当前 CLI `schema` / `model list` 为准。
+- 逐镜用户音频在即梦画布中作为视频生成参考输入。生成结果应带有由该参考音频产生的声音。
+- CapCut Mate/剪映阶段只导入通过 QC 的音视频一体 AI 视频和字幕，不导入 `audio_ref` 原文件，不另建原音频轨，也不使用 FFmpeg 或其他本地工具把原音频与 AI 视频二次合成。若生成视频缺音或音频不符，退回视频 QC/生成阶段处理。
 
 ## 依赖项
 
@@ -64,7 +70,7 @@ Agent 执行已确认内容，不重做创意解释或擅自改变镜头数、�
 | Python 3.11+ | CapCut Mate 本地服务；GPT Image 客户端脚本仅使用标准库 | 需要本地创建剪映草稿时必需。 |
 | CapCut Mate | 草稿 API，默认 `http://127.0.0.1:30000` | 创建剪映草稿时必需。需单独安装和启动，见下文。 |
 | 剪映专业版（Windows） | 打开本地草稿 | Windows 本地草稿工作流必需。 |
-| Dreamina CLI 和授权账号 | 图片/视频任务提交、查询和下载 | 使用 Dreamina 阶段时必需；首次使用需用户完成授权登录。 |
+| Dreamina Canvas CLI、`dreamina-canvas-cli` Skill 和授权账号 | 画布管理、音频/图片素材导入、视频生成、任务查询和下载 | 使用即梦画布阶段时必需；先检查 `auth status`，首次使用需用户完成授权登录。 |
 | GPT Image API Key | GPT Image 2.5 Ext 图片生成和本地参考图上传 | 图片生成时必需；不要写入仓库或分镜文件。 |
 | FFmpeg / ffprobe | 视频编码、尺寸、时长、音频轨检查 | 建议安装；只在需要本地媒体 QC 时使用。 |
 | 可访问 API 的网络与服务额度 | GPT Image 与 Dreamina 任务 | 生成阶段必需；付费请求提交前应确认参数和参考素材。 |
@@ -108,7 +114,7 @@ git clone https://github.com/zjwjoey/mizan-video-pipeline-skills.git && ./mizan-
 
 ### Dreamina CLI
 
-按 Dreamina/即梦官方 CLI 安装说明安装命令行工具，再由用户在本机完成 OAuth 登录。CLI 参数以当前安装版本的 `dreamina -h` 和具体子命令 `-h` 为准；模型、比例、时长支持可能变化。
+安装并读取官方即梦画布 CLI & Skill。登录使用 `dreamina-canvas` 的认证流程，不使用另一套 `dreamina` CLI。每次运行前按已安装 `dreamina-canvas-cli` Skill 检查版本、`schema`、`auth status` 和目标视频模型的当前规格；模型、模式、参考音频、比例、分辨率及时长限制可能变化。不要把认证状态或密钥写入仓库。
 
 ### CapCut Mate / Jianying
 

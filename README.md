@@ -23,7 +23,7 @@ The installer backs up existing skills with the same names before replacing them
 
 - `video-storyboard-compiler` — compile an approved script or validate an owner-authored structured storyboard.
 - `gpt-image-ext-material-generation` — generate stills from approved prompts and references with GPT Image 2.5 Ext.
-- `dreamina-cli` — generate and query Dreamina image/video tasks.
+- `dreamina-cli` — generate MIZAN videos through Dreamina Canvas, using the owner's prepared per-shot audio as a generation reference.
 - `capcut-mate-video-pipeline` — assemble subtitles and a Jianying/CapCut draft, with optional rendering.
 
 The installer copies all four folders under `<skill-root>`.
