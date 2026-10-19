@@ -4,6 +4,13 @@ Validation date: 2026-10-19, Asia/Shanghai. Baseline main: `2ae7ed3`. Developmen
 
 ## Delivery status: CANVAS_BOOTSTRAP_PARTIAL
 
+### Task-association hardening (no architecture or CI-matrix expansion)
+
+- Image task registration now binds its stage/output ID and validates **all** production-plan consumers, including reused/shared anchor consumers and declared output consumers. Missing/extra scope fails; original prompt/ordered refs must match the pending image plan. Independent single-shot video tasks retain scoped behavior.
+- New image registration derives its fingerprint from a matching journal task after an observed successful original submission, and persists task key, submit ID, asset version and file hash. Arbitrary/manual fingerprints, cross-asset keys, prepared/unknown/failed tasks, second result bytes and retroactive certification of identical legacy bytes are rejected. Old unbound fingerprints no longer suffice for automatic reuse.
+- Seven new offline regressions cover omitted/extra/shared-reuse consumers, exact image recipe journaling, unbound fingerprint rejection, successful-vs-prepared registration, wrong asset/fingerprint/result bytes and old unbound fingerprint reuse. Total: **79 tests** locally passed. Real provider operations and downloads are mocked here; no paid submission or real creative approval was made.
+- This is task-association validation, not an autonomous provider bridge or proof of generated image content. External-provider journals without a verified result bridge remain on manual import plus explicit QC/reuse. Actual image/video generation and production-material acceptance remain separate.
+
 ### Small follow-up patch: recipe reuse and scoped task journal
 
 The two new review boundaries are patched without new Skills, architecture changes, paid calls or expanded CI matrix:

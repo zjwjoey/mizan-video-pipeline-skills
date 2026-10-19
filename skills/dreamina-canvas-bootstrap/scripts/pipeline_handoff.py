@@ -66,7 +66,12 @@ def build_image_tasks(production, state, stage, shot_ids=None):
                     "references": [{k: v.get(k) for k in ("asset_id", "version", "file_hash", "canvas_node_id", "canvas_resource_id")} for v in sources]})
                 if output_id in state["approved_versions"]:
                     selected = approved(state, output_id)
-                    if selected.get("generation_fingerprint") == task["generation_fingerprint"]:
+                    origin = state["tasks"].get(selected.get("generation_task_key"), {})
+                    bound = (origin.get("output_asset_id") == output_id and origin.get("registered_file_hash") == selected["file_hash"]
+                             and origin.get("submit_id") == selected.get("generation_submit_id")
+                             and origin.get("generation_fingerprint") == selected.get("generation_fingerprint")
+                             and origin.get("image_task", {}).get("generation_fingerprint") == selected.get("generation_fingerprint"))
+                    if bound and selected.get("generation_fingerprint") == task["generation_fingerprint"]:
                         continue
                     decision = spec.get("output_decisions", {}).get(output_id, {})
                     if (decision.get("fingerprint") != task["generation_fingerprint"] or decision.get("version") != selected["version"]
@@ -165,7 +170,7 @@ def build_plan(production, state, stage, shot_ids=None):
             **production.get("format", {}), "paid_operations": 0}
 
 
-def record_task(job, key, node_id, model, parameters, shot_ids=None):
+def record_task(job, key, node_id, model, parameters, shot_ids=None, task_stage="video", output_asset_id=None):
     """Preparation only. Never submit automatically, including during resume."""
     scope = list(shot_ids) if shot_ids is not None else [parameters.get("shot_id")]
     known = {s["shot_id"]: s for s in job.production["shots"]}
@@ -174,6 +179,26 @@ def record_task(job, key, node_id, model, parameters, shot_ids=None):
     scope = sorted(set(scope))
     if parameters.get("shot_id") is not None and scope != [parameters["shot_id"]]:
         raise ValueError("Task parameter shot_id conflicts with declared shot scope")
+    if task_stage not in ("image-anchor", "image-incremental", "video"):
+        raise ValueError("Unknown generation task stage")
+    if output_asset_id is None and task_stage == "video" and len(scope) == 1:
+        output_asset_id = known[scope[0]].get("video_asset_id")
+    consumers = set()
+    for declaration in job.production.get("outputs", []):
+        if declaration["asset_id"] == output_asset_id:
+            consumers.update(declaration.get("shot_ids", []))
+            if declaration.get("shot_id"): consumers.add(declaration["shot_id"])
+    for sid, shot in known.items():
+        if task_stage == "video":
+            used = output_asset_id and shot.get("video_asset_id") == output_asset_id
+        else:
+            used = any(output_asset_id in spec.get("output_asset_ids", []) for spec in shot["image_generation"].values())
+            used = used or shot.get("scene_anchor_id") == output_asset_id
+            used = used or any(output_asset_id in spec.get("reference_asset_ids", []) or spec.get("base_asset_id") == output_asset_id
+                               or spec.get("reuse_asset_id") == output_asset_id for spec in shot["image_generation"].values())
+        if used: consumers.add(sid)
+    if not output_asset_id or consumers != set(scope):
+        raise ValueError("Task scope must exactly match production-plan consumers for output " + str(output_asset_id) + ": " + ",".join(sorted(consumers)))
     require_preview(job.production, job.state, scope)
     allowed = {"mode", "prompt", "ratio", "resolution", "duration", "refs", "audio_role", "lip_sync_required", "count", "shot_id", "version"}
     if not set(parameters) <= allowed:
@@ -207,10 +232,21 @@ def record_task(job, key, node_id, model, parameters, shot_ids=None):
     tasks = job.state["tasks"]
     if key in tasks:
         task = tasks[key]
-        if task.get("shot_ids") != scope or task["canvas_node_id"] != node_id or task["model"] != model or task["parameters"] != parameters:
+        if (task.get("shot_ids") != scope or task.get("stage") != task_stage or task.get("output_asset_id") != output_asset_id
+                or task["canvas_node_id"] != node_id or task["model"] != model or task["parameters"] != parameters):
             raise ValueError("Task key already bound to different inputs; new intentional revision needs a new key")
         return task
+    image_task = None
+    if task_stage != "video":
+        candidates = build_image_tasks(job.production, job.state, task_stage, scope)["tasks"]
+        image_task = next((t for t in candidates if t["output_asset_id"] == output_asset_id), None)
+        if image_task is None:
+            raise ValueError("No pending image task in the current production plan for " + output_asset_id)
+        if parameters.get("prompt") != image_task["prompt"] or parameters.get("refs", []) != image_task["refs"]:
+            raise ValueError("Submitted image prompt/ordered refs must exactly match the production task")
     task = {"task_key": key, "canvas_node_id": node_id, "submit_id": str(uuid.uuid4()), "model": model,
+            "stage": task_stage, "output_asset_id": output_asset_id,
+            **({"generation_fingerprint": image_task["generation_fingerprint"], "image_task": image_task} if image_task else {}),
             "parameters": parameters, "shot_ids": scope, "state": "prepared_not_submitted", "created_at": now(),
             "recovery_action": "query_same_submit_id_only"}
     tasks[key] = task
@@ -229,13 +265,16 @@ def main():
     parser.add_argument("--model")
     parser.add_argument("--parameters", type=Path)
     parser.add_argument("--shot-id", action="append")
+    parser.add_argument("--task-stage", choices=["image-anchor", "image-incremental", "video"], default="video")
+    parser.add_argument("--asset-id", help="Stable output asset bound to the generation task")
     args = parser.parse_args()
     with project_lock((args.canvas or args.production.with_name("canvas_manifest.json")).with_suffix(".lock")):
         job = Bootstrap(args.production, state_path=args.canvas)
         if args.mode == "record-task":
             if not all((args.task_key, args.node_id, args.model, args.parameters)):
                 parser.error("record-task needs --task-key --node-id --model --parameters")
-            result = record_task(job, args.task_key, args.node_id, args.model, read_json(args.parameters), args.shot_id)
+            result = record_task(job, args.task_key, args.node_id, args.model, read_json(args.parameters), args.shot_id,
+                                 args.task_stage, args.asset_id)
         else:
             result = build_plan(job.production, job.state, args.mode, args.shot_id)
         write_json(args.output, result)

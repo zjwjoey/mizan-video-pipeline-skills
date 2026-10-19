@@ -509,9 +509,30 @@ class Bootstrap:
                            json.dumps(shot, ensure_ascii=False, indent=2), index=index)
 
     def register(self, asset):
+        asset = dict(asset)
         fingerprint = asset.get("generation_fingerprint")
         if fingerprint is not None and not re.fullmatch(r"sha256:[0-9a-f]{64}", fingerprint):
             raise ValueError("generation_fingerprint must be the exact SHA256 fingerprint from the image task plan")
+        task_key = asset.get("generation_task_key")
+        task = self.state["tasks"].get(task_key) if task_key else None
+        if fingerprint is not None and task is None:
+            raise ValueError("Generation fingerprint requires a bound generation_task_key; arbitrary fingerprints are not trusted")
+        if task_key:
+            if (not task or task.get("output_asset_id") != asset["asset_id"] or not task.get("generation_fingerprint")
+                    or task.get("stage") not in ("image-anchor", "image-incremental")):
+                raise ValueError("Generation task does not match this image output")
+            if task.get("remote_state") not in ("success", "succeeded"):
+                raise ValueError("Generation task has no observed successful submission; prepared/unknown tasks cannot certify provenance")
+            if asset["asset_type"] not in ("scene_anchor", "storyboard_image", "first_frame", "last_frame") or asset.get("media_type") != "image":
+                raise ValueError("Bound image task must register an image output")
+            if asset.get("source_type") != "generated":
+                raise ValueError("Bound generation task cannot certify an existing input")
+            if fingerprint is not None and fingerprint != task["generation_fingerprint"]:
+                raise ValueError("Supplied fingerprint differs from the bound task")
+            if task.get("registered_file_hash") not in (None, asset["file_hash"]):
+                raise ValueError("Task already bound to different output bytes")
+            asset["generation_fingerprint"] = task["generation_fingerprint"]
+            asset["generation_submit_id"] = task["submit_id"]
         if asset.get("qc_status") not in QC:
             raise ValueError("Invalid QC status")
         if asset.get("qc_status") == "approved" and not asset.get("qc_evidence"):
@@ -520,6 +541,8 @@ class Bootstrap:
         versions = self.state["assets"].setdefault(aid, [])
         existing = next((v for v in versions if v["file_hash"] == asset["file_hash"]), None)
         if existing:
+            if task_key and existing.get("generation_task_key") != task_key:
+                raise ValueError("Identical bytes already have different/legacy provenance; use explicit reuse, not retroactive certification")
             return existing
         if versions and asset["qc_status"] == "approved":
             # An old input declaration/evidence cannot approve newly changed bytes.
@@ -532,6 +555,8 @@ class Bootstrap:
                        group_name=GROUPS[TYPES[asset["asset_type"]][0]], created_at=now())
         version["update_id"] = stable(version["canvas_node_id"], "create")
         self.ensure_snapshot(version)
+        if task is not None:
+            task.update(registered_file_hash=asset["file_hash"], registered_asset_version=version["version"])
         versions.append(version)
         self.state["node_owners"].setdefault(version["canvas_node_id"], {"asset_id": aid, "version": version["version"]})
         if asset["qc_status"] == "approved":
@@ -799,6 +824,7 @@ def main(argv=None):
     parser.add_argument("--output", type=Path)
     parser.add_argument("--asset-id")
     parser.add_argument("--generation-fingerprint", help="Exact fingerprint from the submitted image task; never infer for legacy bytes")
+    parser.add_argument("--task-key", help="Generation journal key; derives image fingerprint from the successful bound task")
     parser.add_argument("--source-type", choices=["existing", "generated"], default="generated")
     parser.add_argument("--version")
     parser.add_argument("--qc-status", choices=list(QC), default="pending_review")
@@ -851,6 +877,7 @@ def main(argv=None):
                         raise ValueError("Unsupported extension")
                     job.register(dict(template, local_path=str(path), file_hash=file_hash(path), media_type=MEDIA[path.suffix.lower()],
                                       source_type=args.source_type, qc_status=args.qc_status, qc_evidence=args.evidence,
+                                      **({"generation_task_key": args.task_key} if args.task_key else {}),
                                       **({"generation_fingerprint": args.generation_fingerprint} if args.generation_fingerprint else {})))
                 if args.mode in ("sync", "resume", "register"):
                     job.sync()

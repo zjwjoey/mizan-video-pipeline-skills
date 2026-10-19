@@ -27,9 +27,18 @@ class ContractTests(unittest.TestCase):
     def output(self, job, aid, kind="storyboard_image", fingerprint=None):
         path = self.root / (aid + ".png")
         path.write_bytes(aid.encode())
+        provenance = {}
+        if fingerprint:
+            image_task = next(t for t in build_plan(job.production, job.state, "image-incremental", ["P01"])["tasks"] if t["output_asset_id"] == aid)
+            task_key = "synthetic-" + aid
+            journal = record_task(job, task_key, "node_synthetic_generation", "fixture-model",
+                                  {"shot_id": "P01", "prompt": image_task["prompt"], "refs": image_task["refs"]},
+                                  task_stage="image-incremental", output_asset_id=aid)
+            journal["remote_state"] = "succeeded"  # fake service terminal result, never real paid generation
+            provenance["generation_task_key"] = task_key
         v = job.register(dict(asset_id=aid, asset_type=kind, description=aid, local_path=str(path),
                               file_hash=file_hash(path), source_type="generated", qc_status="pending_review", media_type="image",
-                              **({"generation_fingerprint": fingerprint} if fingerprint else {})))
+                              **({"generation_fingerprint": fingerprint} if fingerprint else {}), **provenance))
         job.sync_asset(v, 0)
         job.review(aid, "v01", "approved", "synthetic output QC")
         return v
@@ -323,7 +332,7 @@ class ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "PREVIEW_REVIEW_REQUIRED"):
             record_task(job, "P02", "node_target", "live", {"shot_id": "P02"})
         with self.assertRaisesRegex(ValueError, "PREVIEW_REVIEW_REQUIRED"):
-            record_task(job, "shared", "node_target", "live", {}, ["P01", "P02"])
+            record_task(job, "shared", "node_target", "live", {}, ["P01", "P02"], "image-anchor", "ANCHOR_STORE")
 
     def test_scoped_task_rejects_unrelated_refs_and_prompt_placeholders(self):
         job = self.sync()
@@ -349,6 +358,97 @@ class ContractTests(unittest.TestCase):
         newer = fixtures.BootstrapTests.new_character_version(self, job)
         job.review("CHAR01", newer["version"], "approved", "synthetic new ref")
         self.preview(job)
+        with self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
+            build_plan(job.production, job.state, "image-incremental", ["P01"])
+
+    def anchor_task(self, job, key="shared-anchor"):
+        plan = build_plan(job.production, job.state, "image-anchor", ["P01", "P02"])["tasks"][0]
+        return record_task(job, key, "node_generation", "fixture-model", {"prompt": plan["prompt"], "refs": plan["refs"]},
+                           ["P01", "P02"], "image-anchor", "ANCHOR_STORE")
+
+    def generated_asset(self, aid="ANCHOR_STORE"):
+        path = self.root / (aid + "_result.png")
+        path.write_bytes(b"synthetic result")
+        return dict(asset_id=aid, asset_type="scene_anchor", description="synthetic", local_path=str(path),
+                    file_hash=file_hash(path), media_type="image", source_type="generated", qc_status="pending_review")
+
+    def test_shared_image_task_rejects_omitted_or_extra_consumers(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        for scope in (["P01"], ["P01", "P02", "P03"]):
+            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "production-plan consumers"):
+                record_task(job, "bad", "node_generation", "fixture", {}, scope, "image-anchor", "ANCHOR_STORE")
+        self.assertNotIn("bad", job.state["tasks"])
+
+    def test_shared_task_including_reuse_only_consumer_checks_its_preview(self):
+        self.p["shots"][1]["image_generation"]["anchor"] = {"reuse_asset_id": "ANCHOR_STORE"}
+        write_json(self.path, self.p)
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        (self.root / self.p["assets"][2]["local_path"]).write_bytes(b"P02 P03 changed")
+        with self.assertRaisesRegex(ValueError, "production-plan consumers"):
+            record_task(job, "bad", "node_generation", "fixture", {}, ["P01"], "image-anchor", "ANCHOR_STORE")
+        with self.assertRaisesRegex(ValueError, "PREVIEW_REVIEW_REQUIRED"):
+            self.anchor_task(job)
+
+    def test_image_journal_freezes_exact_plan_recipe_and_rejects_changed_submission(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        task = self.anchor_task(job)
+        self.assertEqual(task["shot_ids"], ["P01", "P02"])
+        self.assertEqual(task["generation_fingerprint"], task["image_task"]["generation_fingerprint"])
+        self.assertEqual(task, self.anchor_task(job))
+        with self.assertRaisesRegex(ValueError, "exactly match"):
+            record_task(job, "bad", "node_generation", "fixture", {"prompt": "wrong", "refs": task["parameters"]["refs"]},
+                        ["P01", "P02"], "image-anchor", "ANCHOR_STORE")
+
+    def test_unbound_manual_fingerprint_rejected_without_creating_version(self):
+        job = self.sync()
+        asset = dict(self.generated_asset(), generation_fingerprint="sha256:" + "a" * 64)
+        with self.assertRaisesRegex(ValueError, "bound generation_task_key"): job.register(asset)
+        self.assertNotIn("ANCHOR_STORE", job.state["assets"])
+
+    def test_registration_derives_fingerprint_only_after_observed_task_success(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        task = self.anchor_task(job)
+        asset = dict(self.generated_asset(), generation_task_key=task["task_key"])
+        for status in (None, "unknown", "failed"):
+            task["remote_state"] = status
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, "no observed successful submission"):
+                job.register(asset)
+        task["remote_state"] = "succeeded"  # isolated fake observation only
+        v = job.register(asset)
+        self.assertEqual(v["generation_fingerprint"], task["generation_fingerprint"])
+        self.assertEqual(v["generation_submit_id"], task["submit_id"])
+        self.assertEqual(task["registered_file_hash"], v["file_hash"])
+        self.assertEqual(job.register(asset)["version"], "v01")
+
+    def test_cross_asset_fingerprint_and_second_file_cannot_hijack_task(self):
+        job = self.sync()
+        self.inputs(job)
+        self.preview(job)
+        task = self.anchor_task(job)
+        task["remote_state"] = "succeeded"
+        asset = dict(self.generated_asset(), generation_task_key=task["task_key"])
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            job.register(dict(asset, asset_id="ANCHOR_HOME"))
+        with self.assertRaisesRegex(ValueError, "differs from the bound task"):
+            job.register(dict(asset, generation_fingerprint="sha256:" + "a" * 64))
+        job.register(asset)
+        path = Path(asset["local_path"])
+        path.write_bytes(b"different fake download")
+        with self.assertRaisesRegex(ValueError, "different output bytes"):
+            job.register(dict(asset, file_hash=file_hash(path)))
+
+    def test_legacy_matching_fingerprint_without_task_binding_cannot_auto_reuse(self):
+        job, task = self.image_fixture()
+        old = self.output(job, "P01_IMAGE")
+        old["generation_fingerprint"] = task["generation_fingerprint"]  # legacy unbound record
         with self.assertRaisesRegex(ValueError, "IMAGE_REUSE_DECISION_REQUIRED"):
             build_plan(job.production, job.state, "image-incremental", ["P01"])
 

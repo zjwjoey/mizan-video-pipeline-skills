@@ -74,15 +74,21 @@ Video plans use every approved execution image. First/last-frame plans expose `f
 
 ### Image recipe identity and explicit reuse
 
-Every image task includes `generation_fingerprint: sha256:...`, derived from the exact stage recipe (prompt, negative, ordered refs, locks, additions, optional generation parameters), output ID, format/image engine, and selected reference versions/content hashes/Canvas identities. Save the fingerprint from the actually submitted task when registering a **new output**:
+Every image task includes `generation_fingerprint: sha256:...`, derived from the exact stage recipe (prompt, negative, ordered refs, locks, additions, optional generation parameters), output ID, format/image engine, and selected reference versions/content hashes/Canvas identities. Freeze the actual image task in the project journal before the independently authorized submission, then register its **new output** by task key:
 
 ```powershell
-python canvas_bootstrap.py register --production production_manifest.json --asset-id P03_IMAGE --file "D:\新图.png" --generation-fingerprint "sha256:<64 lowercase hex digits from the submitted image task>"
+python pipeline_handoff.py record-task --production production_manifest.json --output prepared_task.json --task-key P03-image-v01 --node-id <actual-generation-node> --model <verified-model> --task-stage image-incremental --asset-id P03_IMAGE --shot-id P03 --parameters parameters.json
+# Run the authorized original submit ID externally, then reconcile/observe success.
+python canvas_bootstrap.py register --production production_manifest.json --asset-id P03_IMAGE --file "D:\新图.png" --task-key P03-image-v01
 ```
 
-Do not recalculate this value after generation from a changed manifest or attach one retroactively to an unknown legacy image. Registering identical bytes returns the existing version without rewriting its provenance. Asset QC and generation-configuration identity are separate checks.
+The journal freezes plan recipe/fingerprint, complete consumer scope, output asset, generation node/model, public parameters and original submit ID. Image prompt and ordered references must exactly match that pending production-plan task. Registration derives the fingerprint from the journal, requires an observed successful original operation (`success`/`succeeded`), matching output/type, and binds the result's verified bytes/hash to the task. Prepared, unknown, failed or unsupported terminal states stop; do not mark them successful manually in production. `--generation-fingerprint` alone is rejected; with `--task-key` it only asserts equality. One task cannot certify another asset or different result bytes. Registering identical legacy bytes cannot retroactively attach new provenance.
 
-An approved output skips generation only if its saved fingerprint matches the current task. A missing/different fingerprint stops with `IMAGE_REUSE_DECISION_REQUIRED`, including the current fingerprint. The owner can explicitly select reuse of that approved version or regeneration via the stage's `output_decisions` map:
+Normal `reconcile` observes public CLI tasks without resubmission. External image-provider journals do not automatically acquire successful Canvas-operation status: a future verified provider bridge must correlate its real submission/result before this trusted route can be used. Until then, import external/manual images without a generation fingerprint and explicitly review/reuse them; do not pretend this patch certifies autonomous external-provider execution. Linkage is not visual QC or proof that arbitrary local bytes visually match the generated resource; inspect the actual export and its origin before approval.
+
+Do not recalculate a fingerprint after generation from a changed manifest or attach one retroactively to an unknown legacy image. Asset QC and generation-configuration identity are separate checks.
+
+An approved output skips generation only if its saved fingerprint matches the current task **and** its task key/submit ID/output ID/result hash remain bound in the journal. A missing/different fingerprint or missing provenance binding stops with `IMAGE_REUSE_DECISION_REQUIRED`, including the current fingerprint. This also applies to old unbound fingerprint records. The owner can explicitly select reuse of that approved version or regeneration via the stage's `output_decisions` map:
 
 ```json
 {"output_decisions": {"P03_IMAGE": {
@@ -98,7 +104,7 @@ Use `choice: regenerate` for a new task; the old version remains approved until 
 
 ### Scoped paid-task preparation
 
-`pipeline_handoff.py record-task --shot-id P01 ...` (repeatable for a genuinely shared task) or `parameters.shot_id` must name known nonempty shot scope; contradictory declarations fail. `record_task(..., shot_ids=[...])` uses the same rule. The preview gate checks those consumers only, so an unrelated P02 source change need not block a P01 task. A shared P01/P02 task still checks both.
+`pipeline_handoff.py record-task --shot-id P01 ...` (repeatable for a genuinely shared task) or `parameters.shot_id` must name known nonempty shot scope; contradictory declarations fail. `--task-stage image-anchor|image-incremental --asset-id ...` binds an image output to its actual pending plan. The scope must equal the complete consumer set derived from shot recipes, reused anchors/base/reference dependencies and output declarations; omitting P02 from a P01/P02 anchor is rejected even if only P01 is currently approved. Video scope similarly matches the declared `video_asset_id` (inferred only for a single-shot video). `record_task` accepts corresponding `task_stage` and `output_asset_id` arguments. The preview gate checks those consumers only, so an unrelated P02 source change need not block a genuinely independent P01 task. Old journals without bindings remain queryable by `reconcile`, but cannot be rebound or certify trusted new image provenance.
 
 All `refs` and `{{node:...}}`/`{{res:...}}` prompt placeholders must resolve to approved synchronized versions actually declared for those shots: stage references/base/reused anchor, execution images, character, scene, real SKU or prepared audio. Arbitrary nodes/resources, other shots' products, unapproved versions and stale/corrupted snapshots are rejected before any journal write. The persisted task records `shot_ids`, and a task key cannot be rebound to another scope. These checks prepare a journal only; model capability and paid authorization remain separate gates.
 
