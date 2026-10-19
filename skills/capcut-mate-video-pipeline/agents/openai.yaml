@@ -1,6 +1,6 @@
 interface:
   display_name: "CapCut Mate 视频流水线"
-  short_description: "从脚本、分镜到双语剪映草稿与渲染的自动化视频流水线"
+  short_description: "按镜号编排已批准视频，校验可编辑剪映草稿，按明确要求添加字幕或渲染"
   default_prompt: "使用 $capcut-mate-video-pipeline 将脚本、镜头素材和字幕编排成可打开的剪映本地草稿。"
 
 policy:

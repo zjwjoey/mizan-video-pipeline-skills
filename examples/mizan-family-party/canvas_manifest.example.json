@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project_id": "MIZAN-DEMO-FAMILY-PARTY-V2",
+  "simulation_only": true,
+  "canvas_project_id": null,
+  "canvas_project_name": "MIZAN｜万圣节家庭布置｜2026-10-19｜v01",
+  "canvas_url": null,
+  "sync_status": "illustration_only_not_uploaded",
+  "organization_mode": "not_yet_verified",
+  "nodes": {},
+  "assets": {
+    "P03_IMAGE": [
+      {"version": "v01", "qc_status": "approved", "qc_evidence": "模拟审批例子，非真实生产验收", "local_path": "MIZAN_P03_分镜图片_家庭布置_v01.png", "canvas_node_id": null, "canvas_resource_id": null, "sync_status": "example_only"},
+      {"version": "v02", "qc_status": "pending_review", "local_path": "MIZAN_P03_分镜图片_家庭布置_v02.png", "canvas_node_id": null, "canvas_resource_id": null, "sync_status": "example_only"}
+    ],
+    "P03_VIDEO": [{"version": "v01", "qc_status": "pending_review", "local_path": "MIZAN_P03_视频片段_家庭布置_v01.mp4", "canvas_node_id": null, "canvas_resource_id": null, "sync_status": "example_only"}]
+  },
+  "approved_versions": {"P03_IMAGE": "v01"},
+  "tasks": {},
+  "history": []
+}

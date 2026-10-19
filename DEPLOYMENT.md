@@ -1,17 +1,18 @@
 # 部署说明：流程、依赖与执行规则
 
-本文说明如何部署四个 MIZAN 视频流程 Skills，以及各阶段需要的本机工具和外部账号。安装 Skill 不会替用户登录第三方账号或配置密钥。
+本文说明如何部署五个 MIZAN 视频流程 Skills，以及各阶段需要的本机工具和外部账号。安装 Skill 不会替用户登录第三方账号或配置密钥。
 
 ## 端到端流程
 
 ```text
 用户确认脚本和结构化分镜
+  → Canvas Bootstrap：创建/复用中文画布，同步完整脚本与本次真实素材并供预览
   → 锚定人物与场景
   → 按镜头 image_count 生成执行图
   → 人工/QC确认图片
   → 将用户准备好的逐镜西班牙语音频导入即梦画布并作为视频生成参考
   → 人工检查画面与口型
-  → 使用已带生成音轨的 AI 视频编排时间线和多语言字幕
+  → 使用已带生成音轨的 AI 视频编排时间线（明确要求时才添加字幕）
   → 生成并检查剪映/CapCut草稿
   → 用户要求时再渲染最终视频
 ```
@@ -21,9 +22,10 @@
 | 阶段 | Skill | 输入 / 输出 |
 |---|---|---|
 | 分镜 | `video-storyboard-compiler` | 读取脚本与负责人确认的分镜；输出镜头表、锚点、素材清单和QC交接字段。 |
+| Stage 02.5 画布初始化 | `dreamina-canvas-bootstrap` | 读取 production_manifest，创建/复用中文画布、文本脚本和可见媒体节点；记录 canvas_manifest。 |
 | 图片 | `gpt-image-ext-material-generation` | 读取已批准提示词、人物/场景锚点和商品参考图；严格按每镜 `image_count` 生成。 |
 | 视频 | `dreamina-cli` | 读取通过图片QC的镜头素材，将已准备的 `audio_ref` 上传/导入目标即梦画布并关联至视频生成节点；按当前模型规格、`target_duration` 与 `motion_instruction` 生成带音频的视频。 |
-| 时间线、字幕、草稿 | `capcut-mate-video-pipeline` | 按镜头顺序导入已批准且带生成音轨的视频，依据 `subtitle_es` / `subtitle_zh` 创建字幕轨，保存并校验剪映草稿；不再单独导入本地原音频或合成音视频。 |
+| 时间线、草稿 | `capcut-mate-video-pipeline` | 按镜头顺序导入当前已批准视频，保留生成音轨；明确启用字幕时按语言创建字幕轨。保存并校验草稿，不另导入本地原音频。 |
 
 ## 负责人确认与结构化分镜
 
@@ -98,7 +100,7 @@ if ($LASTEXITCODE -eq 0) { & ".\mizan-video-pipeline-skills\install.ps1" }
 git clone https://github.com/zjwjoey/mizan-video-pipeline-skills.git && ./mizan-video-pipeline-skills/install.sh
 ```
 
-脚本部署四个 Skill 文件夹，不会安装/登录外部生成服务，也不会改写 API 密钥。
+脚本部署五个 Skill 文件夹，不会安装/登录外部生成服务，也不会改写 API 密钥。
 
 ## 配置外部依赖
 
@@ -118,15 +120,64 @@ git clone https://github.com/zjwjoey/mizan-video-pipeline-skills.git && ./mizan-
 
 ### CapCut Mate / Jianying
 
-CapCut Mate 是独立依赖，不能仅靠这四个 Skill 文件夹自动部署。按其上游说明安装 Python 3.11+、`uv`，克隆 [CapCut Mate](https://github.com/Hommy-master/capcut-mate)，运行 `uv sync`；Windows 再按上游要求执行 `uv pip install -e .[windows]`，然后 `uv run main.py`。API 文档默认在 `http://127.0.0.1:30000/docs`。剪映草稿输出路径在 Windows 上通常为 `%LOCALAPPDATA%\JianyingPro\User Data\Projects\com.lveditor.draft`。
+CapCut Mate 是独立依赖，不能仅靠这五个 Skill 文件夹自动部署。按其上游说明安装 Python 3.11+、`uv`，克隆 [CapCut Mate](https://github.com/Hommy-master/capcut-mate)，运行 `uv sync`；Windows 再按上游要求执行 `uv pip install -e .[windows]`，然后 `uv run main.py`。API 文档默认在 `http://127.0.0.1:30000/docs`。剪映草稿输出路径在 Windows 上通常为 `%LOCALAPPDATA%\JianyingPro\User Data\Projects\com.lveditor.draft`。
 
 ## 单独使用 GPT Image 客户端
 
 ```powershell
 python .\skills\gpt-image-ext-material-generation\scripts\gpt_image_ext.py -h
 python .\skills\gpt-image-ext-material-generation\scripts\gpt_image_ext.py upload .\reference.png
-python .\skills\gpt-image-ext-material-generation\scripts\gpt_image_ext.py generate --prompt "approved prompt" --image-url "https://..." --resolution 1K --size 9:16 --n 1 --record .\task.json
+python .\skills\gpt-image-ext-material-generation\scripts\gpt_image_ext.py generate --prompt "approved prompt" --image-url "https://..." --resolution 1K --size 9:16 --n 1 --record .\task.json --allow-paid
 python .\skills\gpt-image-ext-material-generation\scripts\gpt_image_ext.py status TASK_ID
 ```
 
 每个图片生成 POST 都会建立新任务并计费；任务未终结时只查询同一任务 ID，不要重复提交。
+
+## V2 Lite：两份清单和 Stage 02.5
+
+模板1继续确认选题；模板2继续确认完整脚本与逐镜执行规格。只需在模板2增加项目ID、中文主题、脚本版本、本次素材路径的简短配置区，并在同目录保存 `production_manifest.json`。完整字段见 [Manifest contract](skills/dreamina-canvas-bootstrap/references/manifest-contract.md)。旧版四个 Skill 的独立用法保留；V2 不把旧 `pass` 状态静默升级成有证据的批准。
+
+```powershell
+$tool = '.\skills\dreamina-canvas-bootstrap\scripts\canvas_bootstrap.py'
+python $tool extract-docx --file 'D:\项目\模板2.docx' --output 'D:\项目\extracted.json'
+python $tool dry-run --production 'D:\项目\production_manifest.json'
+python $tool bootstrap --production 'D:\项目\production_manifest.json'
+python $tool sync --production 'D:\项目\production_manifest.json'
+python $tool status --production 'D:\项目\production_manifest.json'
+```
+
+普通Word会完整提取段落和表格文本，但没有明确结构化JSON时返回需映射字段，不猜测重写。Agent读取提取结果，按原文建立并确认生产清单。Canvas Bootstrap不要求先补齐西语音频才同步脚本和图片；有可见讲话人物的视频仍必须使用确认音频和口型规则，明确旁白/无音频的镜头则遵循其实际模型准入要求。
+
+`canvas_manifest.json`由程序建立，保存画布项目ID、节点/资源映射、文件哈希、当前批准版本、历史和恢复ID。命名为 `镜头/角色/SKU｜素材类型｜描述｜原有/新生成｜v01｜审核状态`。文件名不含审核状态。相同哈希不重复上传或增加版本；新内容产生新版本，新版待审核时旧批准版保持有效。新生成文件复制到项目的 `generated/<asset_id>/` 内，原始文件保持不变。
+
+新图片/视频回来后运行：
+
+```powershell
+python $tool register --production 'D:\项目\production_manifest.json' --asset-id P03_IMAGE --file 'D:\输出\新图片.png'
+python $tool review --production 'D:\项目\production_manifest.json' --asset-id P03_IMAGE --version v02 --qc-status approved --evidence '负责人检查人物、真实SKU和构图后确认'
+```
+
+`register`只接收清单中声明的输入或逻辑outputs；新版本不能沿用旧版的审核证据。只在新版本同步且审批通过后切换引用。回退时重新批准旧版本，它会恢复到活动区；旧节点保留，引用不会被破坏。相同内容可共享节点，节点名称由首次注册该内容的逻辑素材控制，别名保留独立的审核记录。
+
+## 中文分区与实际能力
+
+统一使用00项目总览与脚本、01人物参考、02门店场景素材、03商品素材、04场景锚点、05分镜图片、06西语音频、07视频片段、08历史版本。本机1.0.3没有原生Group API，实际使用中文标题节点和空间分区；坐标不支持时退化到命名前缀。每次读取当前schema，不调用猜测的group命令。将来出现新编组接口时需先验证其成员操作契约，不能直接宣称原生编组可用。
+
+本地文件使用显式清单，商品按镜头SKU过滤。支持的本地候选扩展为JPG/JPEG/PNG/WEBP、MP3/WAV、MP4，实际是否接受以当前CLI及单文件远端结果为准。资源上传成功后还必须创建可见媒体节点并回读资源，不能只登记本地路径。
+
+## 恢复、下游与验收
+
+```powershell
+python $tool reconcile --production 'D:\项目\production_manifest.json'
+python $tool resume --production 'D:\项目\production_manifest.json'
+python .\skills\dreamina-canvas-bootstrap\scripts\pipeline_handoff.py video --production 'D:\项目\production_manifest.json' --output 'D:\项目\video_plan.json'
+python .\skills\dreamina-canvas-bootstrap\scripts\pipeline_handoff.py capcut --production 'D:\项目\production_manifest.json' --output 'D:\项目\capcut_config.json'
+```
+
+`reconcile`只读远端并登记差异；`resume`只修复非付费同步，记录过的视频任务按同一个submit ID查询。画布创建、上传和节点保存前会先持久化稳定ID；响应丢失也不更换身份。GPT Image响应丢失时保留不确定状态，禁止自动重发POST。脚本改动必须显式递增script_version，内容相同的节点不会重复创建。
+
+下游计划只解析有证据、已同步、文件哈希未变化的批准版本。视频阶段还需读取实时模型规格、验证真实节点连线和音频限制，并在用户授权后才执行付费任务。CLI 1.0.3公开下载仅覆盖图片，视频需要通过已验证的画布导出入口取得文件后再登记；尚未导出不能假装交付完成。
+
+剪映默认30fps，`subtitle_tracks: []`；显式双语才设为 `["es", "zh"]`。运行草稿脚本前配置ffprobe；可用`--dry-run`先检查素材。字幕字体可通过`caption_style.font_path`提供真实本地字体文件；Windows上的Georgia预设自动选择已安装的对应粗体/斜体文件并复制到草稿素材目录。结构检查与剪映GUI实际打开验证分别记录。
+
+离线示例及可复现命令在 [README](README.md#example-and-validation)。最终真实验收、Mock测试及尚需人工验证的边界见 [V2_LITE_VALIDATION.md](docs/V2_LITE_VALIDATION.md)。

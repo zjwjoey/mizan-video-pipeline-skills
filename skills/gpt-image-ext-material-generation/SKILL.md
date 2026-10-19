@@ -13,6 +13,14 @@ Use this skill after a shot has an approved image prompt and before its video ta
 - Default to `flare`, `1K`, `9:16`, and `n=1` unless the user specifies otherwise. Keep task records and mark results `not_started`, `pass`, or `revise` after visual QC.
 - QC rejects generated signage, price labels, unreadable pseudo-text, identity/outfit drift, store-geometry drift, or a frame that cannot connect naturally to the neighbouring shot.
 
+## V2 Lite project integration
+
+Run the sibling Canvas Bootstrap before Stage A scene anchors, and read both manifests from that same project. Preserve Stage A scene anchors / Stage B person-product incremental compositing. Reuse a physical scene's approved anchor across independent shots; `image_count` counts execution images, not already-approved reusable anchors. Select real SKU reference images for every required product.
+
+Register every output in the same Canvas project with the Bootstrap `register` command and its stable logical `asset_id`. The helper preserves originals, copies new generated files with the unified Chinese filename and increments versions only for changed content. `review` records the evidence and approved version; a new pending image never displaces an approved one. Video failure does not invalidate approved images. V2 QC uses `pending_review/approved/redo` rather than implicitly translating old `pass` records.
+
+The API client now requires `--record` and `--allow-paid` after explicit authorization. It saves the submission journal before POST and refuses to overwrite/re-submit an existing record. A lost response stays `submission_uncertain`; investigate it instead of creating a new paid task. Successful task IDs are polled with `status`. Default reference order should come from the confirmed project, not a previous project's host/store choice.
+
 ## Structured storyboard execution
 
 - Read the owner-confirmed shot record and honor `image_count` exactly for each shot; do not infer a fixed total image count.

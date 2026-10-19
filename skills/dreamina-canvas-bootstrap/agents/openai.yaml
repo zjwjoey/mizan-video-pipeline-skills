@@ -1,0 +1,4 @@
+interface:
+  display_name: "MIZAN 即梦画布初始化"
+  short_description: "把确认脚本和本次真实素材同步到中文画布，支持版本追踪、去重及断点恢复"
+  default_prompt: "使用 $dreamina-canvas-bootstrap 将确认后的模板2与本地素材同步到可预览的中文即梦画布。"

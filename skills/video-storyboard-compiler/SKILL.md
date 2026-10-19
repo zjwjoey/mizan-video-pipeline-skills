@@ -57,3 +57,9 @@ Read [references/handoff-schema.md](references/handoff-schema.md) when a project
 - Preserve project fields such as `script_file`, `storyboard_source_file`, `aspect_ratio`, `fps`, `resolution`, `language_voiceover`, `subtitle_tracks`, `image_engine`, `video_engine`, and QC rules.
 - Preserve shot fields including `shot_id`, `scene_group`, `scene_anchor_id`, `host_anchor_id`, timing, `product_refs`, `image_count`, `image_priority`, `material_mode`, `image_prompt_core`, `negative_prompt`, `voiceover_es`, `subtitle_es`, `subtitle_zh`, `target_duration`, `audio_ref`, and `qc_focus`.
 - `image_count` is the number of execution images for that shot, not a fixed project-wide total. Resolve and approve host/scene anchors before generating child-shot images.
+
+## V2 Lite handoff
+
+When using the five-stage MIZAN workflow, write the confirmed `production_manifest.json` using the sibling [Canvas contract](../dreamina-canvas-bootstrap/references/manifest-contract.md). Keep `shot_id`, `scene_id`, `scene_anchor_id`, `character_id`, exact `product_refs`, `generation_strategy`, actual execution `image_count`, `audio_ref`, `audio_role`, `lip_sync_required`, `qc_status`, `approved_asset_id` and `version` stable. Record any legacy `host_anchor_id`/`scene_group` mapping with provenance instead of renumbering.
+
+Run Canvas Bootstrap at Stage 02.5 before scene-anchor generation. Missing audio does not block script/image synchronization; it gates only the affected video shot. `audio_role: none` must be an explicit owner decision and later requires verified model support. Chinese review text is never automatically a subtitle track; default `subtitles.enabled` is false. A source DOCX without unambiguous structured fields must retain exact extracted text and report the missing fields. Do not infer production approval from extraction.
