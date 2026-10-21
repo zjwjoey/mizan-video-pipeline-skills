@@ -1,0 +1,4 @@
+interface:
+  display_name: "MIZAN 即梦视频生成"
+  short_description: "使用同一即梦画布中已批准的图片与西语音频生成视频，并记录任务恢复状态"
+  default_prompt: "使用 $dreamina-cli 读取当前项目已批准素材及音频，准备即梦视频任务并保留恢复记录。"

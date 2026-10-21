@@ -10,3 +10,6 @@
 *task*.json
 __pycache__/
 *.py[cod]
+.local-validation/
+.coverage
+*.lock

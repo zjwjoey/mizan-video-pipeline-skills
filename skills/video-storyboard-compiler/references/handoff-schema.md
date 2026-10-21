@@ -1,5 +1,7 @@
 # Closed-loop handoff schema
 
+For V2 Lite projects, the canonical [production/Canvas contract](../../dreamina-canvas-bootstrap/references/manifest-contract.md) takes precedence over this legacy table. Legacy standalone callers remain supported. Migrate old QC values explicitly with reviewer evidence; `pass` is not automatically a new approval. Keep Chinese translation for internal review, with no visible subtitles unless explicitly requested.
+
 Use these identifiers unchanged across the workflow:
 
 `script_id` → `shot_id` → `asset_id` → `qc_id` → `timeline_clip_id` → `capcut_item_id` → `render_id`.

@@ -3,6 +3,10 @@ name: gpt-image-ext-material-generation
 description: Generate storyboard stills with GPT-Image-2.5-Ext when reference-led image generation and strict prompt preservation are needed before video assembly.
 ---
 
+# V2 review gate
+
+Before any V2 project generation, obtain `pipeline_handoff.py image-anchor` or `image-incremental` from the sibling Bootstrap. This enforces whole-Canvas owner preview and source approvals. Use the selected task's exact prompt, separate negative/locks/additions, ordered reference IDs and snapshot files, and stable output ID. Do not flatten Stage A and Stage B into one prompt. If this provider cannot represent a constraint without changing approved text, stop for an explicit adaptation decision. Register/review each anchor before requesting incremental/start/end tasks. This is a gated plan handoff, not a certified autonomous batch runner.
+
 # GPT-Image-2.5-Ext material generation
 
 Use this skill after a shot has an approved image prompt and before its video task is submitted.
@@ -12,6 +16,14 @@ Use this skill after a shot has an approved image prompt and before its video ta
 - For this project, retain the approved host image as reference 1 and the selected real-store scene image as reference 2. Do not reuse an AI frame with unwanted text as the scene anchor.
 - Default to `flare`, `1K`, `9:16`, and `n=1` unless the user specifies otherwise. Keep task records and mark results `not_started`, `pass`, or `revise` after visual QC.
 - QC rejects generated signage, price labels, unreadable pseudo-text, identity/outfit drift, store-geometry drift, or a frame that cannot connect naturally to the neighbouring shot.
+
+## V2 Lite project integration
+
+Run the sibling Canvas Bootstrap before Stage A scene anchors, and read both manifests from that same project. Preserve Stage A scene anchors / Stage B person-product incremental compositing. Reuse a physical scene's approved anchor across independent shots; `image_count` counts execution images, not already-approved reusable anchors. Select real SKU reference images for every required product.
+
+Register every output in the same Canvas project with the Bootstrap `register` command and its stable logical `asset_id`. The helper preserves originals, copies new generated files with the unified Chinese filename and increments versions only for changed content. `review` records the evidence and approved version; a new pending image never displaces an approved one. Video failure does not invalidate approved images. V2 QC uses `pending_review/approved/redo` rather than implicitly translating old `pass` records.
+
+The API client now requires `--record` and `--allow-paid` after explicit authorization. It saves the submission journal before POST and refuses to overwrite/re-submit an existing record. A lost response stays `submission_uncertain`; investigate it instead of creating a new paid task. Successful task IDs are polled with `status`. Default reference order should come from the confirmed project, not a previous project's host/store choice.
 
 ## Structured storyboard execution
 

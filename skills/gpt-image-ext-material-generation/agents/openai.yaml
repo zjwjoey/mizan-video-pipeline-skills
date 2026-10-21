@@ -1,0 +1,4 @@
+interface:
+  display_name: "MIZAN GPT 图片素材生成"
+  short_description: "按已确认的分镜与真实商品参考生成图片，回收到同一画布并追踪审核版本"
+  default_prompt: "使用 $gpt-image-ext-material-generation 执行确认后的图片提示词，并登记同一项目的素材版本。"

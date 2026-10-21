@@ -3,6 +3,10 @@ name: dreamina-cli
 description: Generate MIZAN storyboard videos through the installed Dreamina Canvas CLI, using the owner's prepared per-shot audio as a video-generation reference. Use after storyboard images and audio are approved and before CapCut Mate assembly.
 ---
 
+# V2 review gate
+
+V2 video plans require `CANVAS_PREVIEW_APPROVED` for the requested shots. Use all ordered `source_image_ids`; never select only the first image of a multi-image shot. For `START_END_FRAME`, bind the two independently approved `frame_refs` in `frame_roles` first/last order and keep `context_refs` outside those two slots. Validate the live model supports this combination with prepared audio before submission. Unsupported combinations block the shot; no silent downgrade, dropped audio/products or fabricated lip-sync success.
+
 # Dreamina Canvas video generation
 
 This MIZAN pipeline stage uses the Dreamina Canvas CLI and its installed `dreamina-canvas-cli` Skill. Do not substitute the separate legacy `dreamina` generator CLI. Read the Canvas Skill before operating, and treat its installed CLI schema, model discovery, authentication instructions, and safety gates as authoritative.
@@ -17,7 +21,7 @@ This MIZAN pipeline stage uses the Dreamina Canvas CLI and its installed `dreami
 
 ## Generation and verification
 
-1. Follow `dreamina-canvas-cli` for version/schema checks, `auth status`, model discovery, canvas selection, resource upload, node references, pricing confirmation, submission, and recovery. Reuse the intended existing project when applicable.
+1. Follow `dreamina-canvas-cli` for version/schema checks, `auth status`, model discovery, node references, pricing confirmation, submission, and recovery. For V2 Lite read `canvas_manifest.json` and reuse its `canvas_project_id`; do not create another Canvas or re-upload an already synchronized image/audio.
 2. Resolve the approved shot image, host/scene anchors, and product references to Canvas-supported references. Preserve storyboard order and exact `shot_id`, approved prompt, `target_duration`, aspect ratio, resolution, and motion instructions.
 3. Attach the prepared per-shot audio node as a reference to the video generation. For dialogue, request natural visible speech matching that audio; for explicitly declared narration, do not direct visible speech. Do not add music or other audio.
 4. Save the Canvas project and record its project ID, video node ID, audio node ID, submitted operation ID, selected model/mode, parameters, and final status for every shot.
@@ -31,3 +35,13 @@ Retain at least `shot_id`, `source_image_ids`, `audio_ref`, `audio_role`, `lip_s
 ## Audio boundary for editing
 
 The generated video is the audio-bearing source clip. CapCut Mate imports that video and subtitles only. Never add the original local `audio_ref` as a separate CapCut/Jianying audio track or locally mux/mix it with the generated video. If the generated video lacks or mishandles its audio, return the shot to review/regeneration; do not repair it by silently compositing the local audio during draft assembly.
+
+## V2 Lite execution and recovery
+
+Use the sibling Bootstrap `pipeline_handoff.py video` to resolve only currently approved image, scene, character, SKU and audio versions. Read its returned node references rather than rewriting confirmed prompts or resolving arbitrary local filenames. Verify the live video model's reference types/counts, audio duration, ratio, resolution and allowed modes before saving generation parameters. After save, read the node back: `generation.references` and `upstreamNodeIds` must include the actual intended source nodes.
+
+The normal rule above remains dialogue with prepared audio. Explicit narration uses its prepared audio and `lip_sync_required: false`. Only a source shot explicitly set to `audio_role: none`, `audio_ref: null`, `lip_sync_required: false` can request a silent mode, and only when the current model actually supports it. Missing audio does not imply that exception. Never generate missing audio or append music.
+
+Before an authorized paid run, use `pipeline_handoff.py record-task` with a stable task key, node, actual model and public parameters; persist the submit ID before sending it to `node run`. Lost responses and resume use `operation status/wait` on the same submit ID only, including unknown/absent states. Do not replay a paid submission automatically. Keep generation evidence separate from QC approval.
+
+Import successful exported video files with Bootstrap `register` into `07｜视频片段`, then review and update the approved version with evidence. CLI download support must be checked by media type: 1.0.3 only documents image downloads, so video export may require the Canvas's verified UI export. Report that step as pending until a real file exists and media QC passes. Preserve all source-image approvals on video failure.
